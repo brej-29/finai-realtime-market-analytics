@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-950 text-slate-50;
+}
+
+.app-shell {
+  @apply min-h-screen flex flex-col;
+}
+
+.app-main {
+  @apply flex-1 flex;
+}
+
+.app-sidebar {
+  @apply w-64 border-r border-slate-800 bg-slate-900/60 backdrop-blur;
+}
+
+.app-content {
+  @apply flex-1 p-6 md:p-8;
+}
