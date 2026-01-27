@@ -11,12 +11,14 @@ from app.db.models import Alert, AlertDirection, AlertEvent, AssetType
 from app.db.session import SessionLocal, engine
 from app.schemas.common import HistoricalBar, Quote
 from app.services.alerts.scheduler import AlertScheduler
+from app.services.market_data.service import MarketDataService
 from app.services.realtime.manager import RealtimeManager
 
 
-class DummyMarketDataService:
+class DummyMarketDataService(MarketDataService):
     def __init__(self, price: float = 100.0) -> None:
         self.price = price
+
 
     async def get_quotes(
         self,

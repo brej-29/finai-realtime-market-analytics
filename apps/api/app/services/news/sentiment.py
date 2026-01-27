@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Literal
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -18,7 +18,7 @@ class HeadlineSentimentAnalyzer:
         scores = self.analyzer.polarity_scores(text)
         compound = float(scores.get("compound", 0.0))
 
-        label: str
+        label: Literal["positive", "neutral", "negative"]
         if compound >= 0.05:
             label = "positive"
         elif compound <= -0.05:
