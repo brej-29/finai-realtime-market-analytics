@@ -15,8 +15,7 @@ function getApiBase(): string {
 }
 
 export function NotificationCenter() {
-  const { alertEvents, unreadAlertCount, setAlertEvents, addAlertEvent, markAllAlertsRead } =
-    useAppStore();
+  const { alertEvents, unreadAlertCount, setAlertEvents, markAllAlertsRead } = useAppStore();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {

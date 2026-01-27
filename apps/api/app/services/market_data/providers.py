@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from http import HTTPStatus
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Mapping
 
 import httpx
 

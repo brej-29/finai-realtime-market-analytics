@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_news_client
