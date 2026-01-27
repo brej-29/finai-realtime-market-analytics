@@ -18,6 +18,16 @@ class AppSettings(BaseSettings):
 
     api_v1_prefix: str = "/api/v1"
 
+    # CORS / frontend integration
+    backend_cors_origins: str = Field(
+        default="http://localhost:3000",
+        alias="BACKEND_CORS_ORIGINS",
+        description=(
+            "Comma-separated list of allowed CORS origins for browser clients. "
+            "Use '*' to allow all origins."
+        ),
+    )
+
     # Database
     database_url: str = Field(
         default="sqlite:///./dev.db",

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from http import HTTPStatus
 from typing import List, Sequence, Tuple
 
+import asyncio
 import httpx
 
 from app.core.config import AppSettings
@@ -20,10 +22,6 @@ logger = get_logger("app.services.news.gdelt")
 class NewsResult:
     items: List[NewsArticle]
     fetched_at: datetime
-
-
-def _score_headline(self, title: str) -> SentimentScore:
-        return self._sentiment.score(title)
 
 
 class GDELTClient:
@@ -44,6 +42,9 @@ class GDELTClient:
         self.cache = cache
         self.settings = settings
         self._sentiment = HeadlineSentimentAnalyzer()
+
+    def _score_headline(self, title: str) -> SentimentScore:
+        return self._sentiment.score(title)
 
     def _cache_key(self, symbol: str, asset_type: AssetType) -> Tuple[str, str, str]:
         return ("gdelt", symbol.upper(), asset_type.value)
@@ -87,25 +88,60 @@ class GDELTClient:
             "enddatetime": end_str,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(self.base_url, params=params)
-        except httpx.HTTPError as exc:
-            logger.warning(
-                "GDELT request failed",
-                extra={"symbol": symbol, "asset_type": asset_type.value, "error": str(exc)},
-            )
-            return []
+        retry_statuses = {
+            HTTPStatus.TOO_MANY_REQUESTS,
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            HTTPStatus.BAD_GATEWAY,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            HTTPStatus.GATEWAY_TIMEOUT,
+        }
+        backoff = 1.0
 
-        if response.status_code != 200:
-            logger.warning(
-                "GDELT non-200 response",
-                extra={
-                    "status_code": response.status_code,
-                    "body": response.text[:200],
-                    "symbol": symbol,
-                },
-            )
+        response: httpx.Response | None = None
+        for attempt in range(1, 4):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(self.base_url, params=params)
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "GDELT request failed",
+                    extra={
+                        "symbol": symbol,
+                        "asset_type": asset_type.value,
+                        "attempt": attempt,
+                        "error": str(exc),
+                    },
+                )
+                if attempt == 3:
+                    return []
+            else:
+                if response.status_code == HTTPStatus.OK:
+                    break
+
+                if response.status_code not in retry_statuses or attempt == 3:
+                    logger.warning(
+                        "GDELT non-200 response",
+                        extra={
+                            "status_code": response.status_code,
+                            "body": response.text[:200],
+                            "symbol": symbol,
+                        },
+                    )
+                    return []
+
+                logger.warning(
+                    "GDELT retryable response; backing off",
+                    extra={
+                        "status_code": response.status_code,
+                        "symbol": symbol,
+                        "attempt": attempt,
+                    },
+                )
+
+            await asyncio.sleep(backoff)
+            backoff *= 2
+
+        if response is None:
             return []
 
         try:

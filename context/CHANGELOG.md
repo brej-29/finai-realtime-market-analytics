@@ -76,7 +76,7 @@ Details of implementation are in the corresponding PR description and context do
 
 - **AI / ML insights**
   - Created small ML utilities:
-    - Linear regression on lagged closes for short-horizon forecasts.
+    - Linear regression on lag features for short-horizon forecasts.
     - IsolationForest-based anomaly detection on returns + volume.
   - Added `ai` schemas and `GET /api/v1/ai/insights` endpoint:
     - Technical summary (RSI/MACD state and labels).
@@ -99,3 +99,62 @@ Details of implementation are in the corresponding PR description and context do
     - GDELT client parsing and sentiment scoring.
     - Portfolio PDF report endpoint.
   - Kept all additions free-tier and CPU-friendly, with graceful degradation to cached or empty responses.
+
+---
+
+## 2026-01-27 – Prompt 3 Local DX & Free-Tier Deployment
+
+**Scope:**
+
+- **Developer experience & commands**
+  - Extended root `Makefile` with:
+    - `make setup` – install backend and frontend dependencies.
+    - `make api` / `make web` – run backend and frontend dev servers.
+    - `make dev` – documents two-terminal dev flow.
+    - `make test` – backend + frontend tests.
+    - `make lint` – backend ruff + frontend ESLint + TS typecheck.
+    - `make fmt` – Python auto-fix via ruff and frontend formatting via Prettier.
+    - `make db-up`, `make db-down` – manage local Postgres via `docker-compose`.
+    - `make db-migrate` – run Alembic migrations.
+    - `make db-seed` – placeholder seed target (no-op for now).
+    - `make clean` – remove caches and frontend build artifacts.
+  - Added Windows PowerShell helper scripts:
+    - `scripts/setup.ps1` – mirrors `make setup`.
+    - `scripts/dev.ps1` – starts backend and frontend as background jobs.
+    - `scripts/db.ps1` – `-Action up|down|migrate|seed` for DB workflows.
+
+- **Docs**
+  - Added `context/LOCAL_RUN.md`:
+    - End-to-end local run instructions (Mac/Linux + Windows).
+    - Details on env files, Make targets, PowerShell scripts, troubleshooting, and smoke tests.
+  - Added `context/DEPLOY_FREE.md`:
+    - Free-tier deployment guide for:
+      - Vercel (frontend, `apps/web`).
+      - Render (backend, `apps/api`).
+      - Neon (recommended) or Supabase (alternative) Postgres.
+    - Environment variable reference and post-deploy validation checklist.
+  - Updated `README.md` to link to `LOCAL_RUN` and `DEPLOY_FREE`.
+
+- **Config & env hygiene**
+  - Added root `.env.example` summarizing key backend and frontend env vars.
+  - Updated `apps/api/.env.example`:
+    - Documented Neon/Supabase-friendly `DATABASE_URL` usage.
+    - Added `BACKEND_CORS_ORIGINS` for CORS configuration.
+  - Updated `.gitignore` to ignore `*.db` files going forward.
+
+- **Backend robustness**
+  - Introduced CORS middleware in `app.main`:
+    - Reads allowed origins from `BACKEND_CORS_ORIGINS`.
+    - Defaults to allowing `http://localhost:3000`.
+  - Implemented exponential backoff + retries for external providers:
+    - Twelve Data and CoinGecko now retry on 429/5xx with bounded exponential backoff.
+    - GDELT client uses similar retry logic, still degrading to an empty list on failure.
+  - Fixed a bug in the GDELT client where headline sentiment scoring was not correctly bound to the class.
+  - Kept existing rate limiting and caching behaviour, now aligned with the documented design in `DATA_SOURCES.md`.
+
+- **Tests & cleanup**
+  - Refactored `apps/api/tests/test_api_endpoints.py`:
+    - Unified around a single `TestClient` fixture with a stubbed `MarketDataService`.
+    - Ensures API tests do not hit real external providers.
+    - Fixed a syntax/merge issue and clarified health/CRUD tests.
+  - Ensured new commands and scripts used in docs correspond to real Make targets and PowerShell scripts.

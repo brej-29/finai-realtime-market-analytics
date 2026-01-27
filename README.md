@@ -18,6 +18,11 @@ For high-level goals and architecture, see the `/context` folder:
 - `context/COSINE_RULES.md`
 - `context/CHANGELOG.md`
 
+For detailed, copy-paste guides:
+
+- `context/LOCAL_RUN.md` – how to run everything locally (Mac/Linux + Windows)
+- `context/DEPLOY_FREE.md` – how to deploy on free tiers (Vercel + Render + Neon/Supabase)
+
 ---
 
 ## High-level architecture

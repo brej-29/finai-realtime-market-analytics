@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
+from http import HTTPStatus
 from typing import Iterable, Mapping, Sequence
 
 import httpx
@@ -14,6 +16,15 @@ from app.services.market_data.cache import InMemoryCache
 from app.services.market_data.rate_limiter import RateLimitGuard
 
 logger = get_logger("app.services.market_data")
+
+_RETRY_STATUS_CODES = {
+    HTTPStatus.TOO_MANY_REQUESTS,
+    HTTPStatus.INTERNAL_SERVER_ERROR,
+    HTTPStatus.BAD_GATEWAY,
+    HTTPStatus.SERVICE_UNAVAILABLE,
+    HTTPStatus.GATEWAY_TIMEOUT,
+}
+_MAX_RETRIES = 3
 
 
 class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
@@ -33,6 +44,58 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
         self.rate_limit_guard = rate_limit_guard
         self.cache = cache
 
+    async def _request_with_backoff(
+        self,
+        url: str,
+        params: Mapping[str, str],
+        context: str,
+    ) -> httpx.Response:
+        """Perform an HTTP GET with exponential backoff on transient errors."""
+        backoff = 1.0
+        last_error: Exception | None = None
+
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(url, params=params)
+            except httpx.HTTPError as exc:
+                last_error = exc
+                logger.warning(
+                    "Twelve Data %s request failed",
+                    extra={"context": context, "attempt": attempt, "error": str(exc)},
+                )
+            else:
+                if response.status_code == HTTPStatus.OK:
+                    return response
+
+                if response.status_code not in _RETRY_STATUS_CODES or attempt == _MAX_RETRIES:
+                    logger.warning(
+                        "Twelve Data %s non-success response",
+                        extra={
+                            "context": context,
+                            "status_code": response.status_code,
+                            "body": response.text[:200],
+                            "attempt": attempt,
+                        },
+                    )
+                    break
+
+                logger.warning(
+                    "Twelve Data %s returned retryable status; backing off",
+                    extra={
+                        "context": context,
+                        "status_code": response.status_code,
+                        "attempt": attempt,
+                    },
+                )
+
+            await asyncio.sleep(backoff)
+            backoff *= 2
+
+        if last_error is not None:
+            raise ProviderError("Error calling Twelve Data.") from last_error
+        raise ProviderError("Twelve Data returned an error response.")
+
     async def get_quotes(self, symbols: Iterable[str]) -> list[Quote]:
         symbol_list = list(symbols)
         if not symbol_list:
@@ -48,19 +111,7 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
         }
         url = f"{self.base_url}/quote"
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-        except httpx.HTTPError as exc:
-            logger.warning("Twelve Data request failed", extra={"error": str(exc)})
-            raise ProviderError("Error calling Twelve Data.") from exc
-
-        if response.status_code != 200:
-            logger.warning(
-                "Twelve Data non-200 response",
-                extra={"status_code": response.status_code, "body": response.text[:200]},
-            )
-            raise ProviderError("Twelve Data returned an error response.")
+        response = await self._request_with_backoff(url, params, context="quote")
 
         data = response.json()
 
@@ -123,19 +174,7 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
         }
         url = f"{self.base_url}/time_series"
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-        except httpx.HTTPError as exc:
-            logger.warning("Twelve Data history request failed", extra={"error": str(exc)})
-            raise ProviderError("Error calling Twelve Data for history.") from exc
-
-        if response.status_code != 200:
-            logger.warning(
-                "Twelve Data history non-200 response",
-                extra={"status_code": response.status_code, "body": response.text[:200]},
-            )
-            raise ProviderError("Twelve Data returned an error response for history.")
+        response = await self._request_with_backoff(url, params, context="history")
 
         data = response.json()
         values = data.get("values")
@@ -181,6 +220,58 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
         self.rate_limit_guard = rate_limit_guard
         self.cache = cache
 
+    async def _request_with_backoff(
+        self,
+        url: str,
+        params: Mapping[str, str],
+        context: str,
+    ) -> httpx.Response:
+        """Perform an HTTP GET with exponential backoff on transient errors."""
+        backoff = 1.0
+        last_error: Exception | None = None
+
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(url, params=params)
+            except httpx.HTTPError as exc:
+                last_error = exc
+                logger.warning(
+                    "CoinGecko %s request failed",
+                    extra={"context": context, "attempt": attempt, "error": str(exc)},
+                )
+            else:
+                if response.status_code == HTTPStatus.OK:
+                    return response
+
+                if response.status_code not in _RETRY_STATUS_CODES or attempt == _MAX_RETRIES:
+                    logger.warning(
+                        "CoinGecko %s non-success response",
+                        extra={
+                            "context": context,
+                            "status_code": response.status_code,
+                            "body": response.text[:200],
+                            "attempt": attempt,
+                        },
+                    )
+                    break
+
+                logger.warning(
+                    "CoinGecko %s returned retryable status; backing off",
+                    extra={
+                        "context": context,
+                        "status_code": response.status_code,
+                        "attempt": attempt,
+                    },
+                )
+
+            await asyncio.sleep(backoff)
+            backoff *= 2
+
+        if last_error is not None:
+            raise ProviderError("Error calling CoinGecko.") from last_error
+        raise ProviderError("CoinGecko returned an error response.")
+
     async def get_quotes(self, symbols: Iterable[str]) -> list[Quote]:
         symbol_list = [s.lower() for s in symbols]
         if not symbol_list:
@@ -196,19 +287,7 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
         }
         url = f"{self.base_url}/simple/price"
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-        except httpx.HTTPError as exc:
-            logger.warning("CoinGecko request failed", extra={"error": str(exc)})
-            raise ProviderError("Error calling CoinGecko.") from exc
-
-        if response.status_code != 200:
-            logger.warning(
-                "CoinGecko non-200 response",
-                extra={"status_code": response.status_code, "body": response.text[:200]},
-            )
-            raise ProviderError("CoinGecko returned an error response.")
+        response = await self._request_with_backoff(url, params, context="quote")
 
         data = response.json()
         now = datetime.now(timezone.utc)
@@ -262,19 +341,7 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
         }
         url = f"{self.base_url}/coins/{symbol.lower()}/market_chart"
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-        except httpx.HTTPError as exc:
-            logger.warning("CoinGecko history request failed", extra={"error": str(exc)})
-            raise ProviderError("Error calling CoinGecko for history.") from exc
-
-        if response.status_code != 200:
-            logger.warning(
-                "CoinGecko history non-200 response",
-                extra={"status_code": response.status_code, "body": response.text[:200]},
-            )
-            raise ProviderError("CoinGecko returned an error response for history.")
+        response = await self._request_with_backoff(url, params, context="history")
 
         data = response.json()
         prices = data.get("prices")

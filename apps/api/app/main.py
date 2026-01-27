@@ -6,6 +6,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -28,6 +29,21 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
+    )
+
+    # CORS configuration to support local dev and hosted frontends (e.g. Vercel).
+    raw_origins = settings.backend_cors_origins.strip()
+    if not raw_origins or raw_origins == "*":
+        origins = ["*"]
+    else:
+        origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     setup_app_logging(app)
