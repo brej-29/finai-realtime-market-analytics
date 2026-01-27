@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, Iterable, Set, Tuple
+from typing import Any, Dict, Iterable, Set, Tuple
 
 from fastapi import WebSocket
 
@@ -77,6 +77,21 @@ class RealtimeManager:
         for websocket in subscribers:
             try:
                 await websocket.send_json({"type": "heartbeat"})
+            except Exception:
+                await self.disconnect(websocket)
+
+    async def broadcast_alert(self, payload: Dict[str, Any]) -> None:
+        """Broadcast an alert event to all connected clients.
+
+        The payload should already be JSON-serializable and include keys like:
+        {"type": "alert", "alertId": ..., "symbol": ..., "message": ..., "ts": ...}
+        """
+        async with self._lock:
+            subscribers = list(self._connections)
+
+        for websocket in subscribers:
+            try:
+                await websocket.send_json(payload)
             except Exception:
                 await self.disconnect(websocket)
 

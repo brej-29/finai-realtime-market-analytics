@@ -2,6 +2,8 @@ import "../app/globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { NotificationCenter } from "../components/notifications/NotificationCenter";
+
 export const metadata: Metadata = {
   title: "FinAI Realtime Market Analytics",
   description: "Realtime stock &amp; crypto analytics dashboard"
@@ -23,12 +25,16 @@ export default function RootLayout(props: { children: React.ReactNode }) {
                 <p className="text-xs text-slate-400">Stocks &amp; Crypto</p>
               </div>
             </div>
-            <nav className="flex items-center gap-4 text-sm text-slate-300">
-              <Link href="/">Home</Link>
-              <Link href="/watchlist">Watchlist</Link>
-              <Link href="/portfolio">Portfolio</Link>
-              <Link href="/alerts">Alerts</Link>
-            </nav>
+            <div className="flex items-center gap-4 text-sm text-slate-300">
+              <nav className="flex items-center gap-4">
+                <Link href="/">Home</Link>
+                <Link href="/watchlist">Watchlist</Link>
+                <Link href="/portfolio">Portfolio</Link>
+                <Link href="/alerts">Alerts</Link>
+                <Link href="/analytics">Analytics</Link>
+              </nav>
+              <NotificationCenter />
+            </div>
           </div>
         </header>
         <div className="app-main">
@@ -46,6 +52,9 @@ export default function RootLayout(props: { children: React.ReactNode }) {
               </Link>
               <Link href="/alerts" className="hover:text-brand-light">
                 Alerts
+              </Link>
+              <Link href="/analytics" className="hover:text-brand-light">
+                Analytics
               </Link>
             </div>
           </aside>

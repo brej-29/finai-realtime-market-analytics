@@ -8,6 +8,7 @@ from app.core.config import AppSettings, get_settings
 from app.db.session import SessionLocal
 from app.services.market_data.service import MarketDataService
 from app.services.realtime.manager import RealtimeManager
+from app.services.news.gdelt_client import GDELTClient
 
 
 def get_app_settings() -> AppSettings:
@@ -64,17 +65,47 @@ def build_market_data_service(settings: AppSettings) -> MarketDataService:
     )
 
 
+def build_news_client(settings: AppSettings) -> GDELTClient:
+    """Create a GDELT client with its own in-memory cache."""
+    # Lazy import to avoid circular dependency at import time
+    from app.services.market_data.cache import InMemoryCache
+
+    cache = InMemoryCache()
+    return GDELTClient(
+        base_url=settings.gdelt_base_url,
+        cache=cache,
+        settings=settings,
+    )
+
+
 def get_market_data_service(
     request: Request,
     settings: AppSettings = Depends(get_app_settings),
 ) -> MarketDataService:
     """Return the shared MarketDataService attached to the app, or build one."""
-    service: MarketDataService | None = getattr(request.app.state, "market_data_service", None)  # type: ignore[attr-defined]
+    service: MarketDataService | None = getattr(
+        request.app.state, "market_data_service", None
+    )  # type: ignore[attr-defined]
     if service is not None:
         return service
     service = build_market_data_service(settings)
     request.app.state.market_data_service = service  # type: ignore[assignment]
     return service
+
+
+def get_news_client(
+    request: Request,
+    settings: AppSettings = Depends(get_app_settings),
+) -> GDELTClient:
+    """Return the shared GDELT news client attached to the app, or build one."""
+    client: GDELTClient | None = getattr(
+        request.app.state, "news_client", None
+    )  # type: ignore[attr-defined]
+    if client is not None:
+        return client
+    client = build_news_client(settings)
+    request.app.state.news_client = client  # type: ignore[assignment]
+    return client
 
 
 def get_realtime_manager() -> RealtimeManager:

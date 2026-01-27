@@ -4,16 +4,18 @@ import asyncio
 from contextlib import suppress
 from typing import Any
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.deps import build_market_data_service
+from app.core.deps import build_market_data_service, build_news_client
 from app.core.errors import register_exception_handlers
 from app.core.logging import setup_app_logging
 from app.db import models  # noqa: F401  # ensure models are imported for metadata
 from app.db.base import Base
 from app.db.session import engine
+from app.services.alerts.scheduler import AlertScheduler
 from app.services.realtime.manager import realtime_manager
 from app.services.realtime.streamer import RealtimeStreamer
 
@@ -44,6 +46,10 @@ def create_app() -> FastAPI:
         market_data_service = build_market_data_service(settings)
         app.state.market_data_service = market_data_service  # type: ignore[assignment]
 
+        # News client (GDELT)
+        news_client = build_news_client(settings)
+        app.state.news_client = news_client  # type: ignore[assignment]
+
         # Realtime manager is a singleton; attach for convenience
         app.state.realtime_manager = realtime_manager  # type: ignore[assignment]
 
@@ -65,6 +71,25 @@ def create_app() -> FastAPI:
             heartbeat_loop(), name="realtime-heartbeat"
         )  # type: ignore[assignment]
 
+        # Alert scheduler
+        alert_scheduler = AlertScheduler(
+            market_data_service=market_data_service,
+            realtime_manager=realtime_manager,
+            settings=settings,
+        )
+        app.state.alert_scheduler = alert_scheduler  # type: ignore[assignment]
+
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(
+            alert_scheduler.evaluate_alerts,
+            "interval",
+            seconds=settings.alerts_scheduler_interval_seconds,
+            max_instances=1,
+            coalesce=True,
+        )
+        scheduler.start()
+        app.state.apscheduler = scheduler  # type: ignore[assignment]
+
     @app.on_event("shutdown")
     async def on_shutdown() -> None:  # pragma: no cover - covered indirectly via tests
         streamer: RealtimeStreamer | None = getattr(
@@ -73,6 +98,12 @@ def create_app() -> FastAPI:
         heartbeat_task: asyncio.Task[Any] | None = getattr(
             app.state, "heartbeat_task", None
         )  # type: ignore[assignment]
+        scheduler: AsyncIOScheduler | None = getattr(
+            app.state, "apscheduler", None
+        )  # type: ignore[assignment]
+
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
 
         if streamer is not None:
             await streamer.stop()

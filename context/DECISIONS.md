@@ -197,4 +197,78 @@ This document captures **architectural and design decisions** that shape the pro
 
 ---
 
+## 2026-01-27 – Alerts, News, and Lightweight AI (Prompt 2)
+
+### D10: Scheduled Alert Evaluation + Event Table
+
+**Decision:**
+
+- Introduce an `alert_events` table to persist fired alerts (with `payload` + `status`).
+- Use **APScheduler** in the backend to run an `AlertScheduler.evaluate_alerts` job on a configurable interval.
+- Broadcast alert events over WebSocket as `{"type":"alert", ...}` and expose them over REST at `GET /api/v1/alerts/events`.
+
+**Rationale:**
+
+- Avoids evaluating alert conditions in request/response flows (keeps endpoints responsive).
+- Makes alert history auditable and queryable from the UI (notification centre).
+- WebSocket broadcasts give real-time UX without polling while REST remains available for pull-based views.
+
+### D11: Technical Alert Types (RSI / MA Cross)
+
+**Decision:**
+
+- Extend `AlertDirection` with:
+  - `rsi_above`, `rsi_below`, `ma_cross`
+- Implement lightweight indicator helpers (`compute_simple_rsi`, `moving_average`) instead of adding heavy dependencies.
+
+**Rationale:**
+
+- Keeps evaluation logic simple and CPU-friendly for free-tier deployments.
+- Still gives users more expressive, educational alert types beyond raw price levels.
+
+### D12: News & Sentiment via GDELT + VADER
+
+**Decision:**
+
+- Use **GDELT Doc 2.0 API** as the news source (no key, free, global coverage).
+- Restrict to English-language headlines and compute sentiment using **VADER**.
+- Cache responses per `(symbol, asset_type)` with a configurable TTL.
+
+**Rationale:**
+
+- Stays within free-tier constraints without introducing paid providers.
+- VADER is lightweight and well-suited to short texts like headlines.
+- Caching avoids overusing the free Doc API and keeps UIs snappy.
+
+### D13: Lightweight AI / ML for Insights (No Heavy Infra)
+
+**Decision:**
+
+- Implement simple, in-process models:
+  - Linear regression on lag features for short-horizon forecasts.
+  - IsolationForest on returns/volume for anomaly flags.
+- Expose them via `GET /api/v1/ai/insights` with strong disclaimers that results are **not investment advice**.
+
+**Rationale:**
+
+- Keeps the stack easy to run on local machines and free-tier containers (no external ML services).
+- Demonstrates ML-backed insights without overpromising model sophistication.
+- Aligns with educational goals of the project.
+
+### D14: Portfolio Analytics & Reports
+
+**Decision:**
+
+- Add `/api/v1/analytics/portfolio` and `/api/v1/analytics/benchmark` for:
+  - Volatility, max drawdown, and Sharpe ratio.
+  - Daily return series for charts.
+- Add `/api/v1/reports/portfolio.pdf` using ReportLab for a small, exportable PDF.
+
+**Rationale:**
+
+- Gives users a portfolio-level view (risk and performance) beyond single-ticker charts.
+- PDF export supports “presentation ready” artifacts while staying lightweight and server-side only.
+
+---
+
 Future decisions should be **added below with a timestamp**, never retroactively edited, to preserve historical reasoning.

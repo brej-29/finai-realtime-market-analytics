@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     UniqueConstraint,
     func,
@@ -27,6 +29,15 @@ class AssetType(str, enum.Enum):
 class AlertDirection(str, enum.Enum):
     PRICE_ABOVE = "price_above"
     PRICE_BELOW = "price_below"
+    RSI_ABOVE = "rsi_above"
+    RSI_BELOW = "rsi_below"
+    MA_CROSS = "ma_cross"
+
+
+class AlertEventStatus(str, enum.Enum):
+    NEW = "new"
+    DELIVERED = "delivered"
+    ERROR = "error"
 
 
 class Watchlist(Base):
@@ -109,3 +120,36 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    events: Mapped[list["AlertEvent"]] = relationship(
+        "AlertEvent",
+        back_populates="alert",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class AlertEvent(Base):
+    __tablename__ = "alert_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    alert_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("alerts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    fired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    message: Mapped[str] = mapped_column(String(length=255), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[AlertEventStatus] = mapped_column(
+        Enum(AlertEventStatus, name="alert_event_status_enum", native_enum=False),
+        default=AlertEventStatus.NEW,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    alert: Mapped[Alert] = relationship("Alert", back_populates="events")

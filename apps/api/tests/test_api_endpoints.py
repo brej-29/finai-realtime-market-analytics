@@ -1,5 +1,92 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/health",
+        "/api/v1/quotes?symbols=AAPL&asset_type=stock",
+        "/api/v1/history?symbol=AAPL&asset_type=stock&interval=1h&range=1d",
+    ],
+)
+def test_basic_endpoints_respond(path: str) -> None:
+    response = client.get(path)
+    assert response.status_code in {200, 400, 502}
+
+
+def test_watchlists_crud() -> None:
+    # Create watchlist
+    resp = client.post("/api/v1/watchlists", json={"name": "Test"})
+    assert resp.status_code == 201
+    data = resp.json()
+    watchlist_id = data["id"]
+
+    # Add item
+    resp = client.post(
+        f"/api/v1/watchlists/{watchlist_id}/items",
+        json={"symbol": "AAPL", "asset_type": "stock"},
+    )
+    assert resp.status_code == 201
+    item = resp.json()
+    assert item["symbol"] == "AAPL"
+
+    # Get watchlist
+    resp = client.get(f"/api/v1/watchlists/{watchlist_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == watchlist_id
+    assert len(data["items"]) == 1
+
+    # Delete item
+    item_id = item["id"]
+    resp = client.delete(f"/api/v1/watchlists/{watchlist_id}/items/{item_id}")
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+
+def test_alerts_create_and_list() -> None:
+    resp = client.post(
+        "/api/v1/alerts",
+        json={
+            "symbol": "AAPL",
+            "asset_type": "stock",
+            "direction": "price_above",
+            "threshold": 100.0,
+        },
+    )
+    assert resp.status_code == 201
+    alert = resp.json()
+    assert alert["symbol"] == "AAPL"
+
+    resp = client.get("/api/v1/alerts")
+    assert resp.status_code == 200
+    alerts = resp.json()
+    assert isinstance(alerts, list)
+    assert any(a["symbol"] == "AAPL" for a in alerts)
+
+    # Events endpoint should respond even if no events yet
+    resp = client.get("/api/v1/alerts/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert isinstance(events, list)
+
+
+def test_health_response_shape() -> None:
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "timestamp" in data_future__ import annotations
+
 from datetime import datetime, timezone
 from collections.abc import Generator, Iterable
 

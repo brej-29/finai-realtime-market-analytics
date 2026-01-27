@@ -2,8 +2,8 @@
 
 Production-style, portfolio-grade **Real-Time Stock &amp; Crypto Analytics Dashboard** built as a monorepo:
 
-- **Backend:** FastAPI, SQLAlchemy, Alembic, WebSockets
-- **Frontend:** Next.js (App Router), TypeScript, Tailwind, Zustand
+- **Backend:** FastAPI, SQLAlchemy, Alembic, WebSockets, APScheduler, lightweight ML
+- **Frontend:** Next.js (App Router), TypeScript, Tailwind, Zustand, Chart.js
 - **CI:** GitHub Actions (lint + typecheck + tests)
 - **Deployment target:** Render (API + Postgres) and Vercel (web), free-tier friendly
 
@@ -20,6 +20,41 @@ For high-level goals and architecture, see the `/context` folder:
 
 ---
 
+## High-level architecture
+
+```text
+                +-----------------------------+
+                |        Next.js (web)        |
+                |   - Dashboard / Watchlist   |
+                |   - Symbol detail (AI)      |
+                |   - Portfolio / Analytics   |
+                |   - Alerts + Notifications  |
+                +---------------+-------------+
+                                |
+            HTTPS (REST JSON)   |   WebSocket (ticks + alerts)
+                                v
+                +-----------------------------+
+                |          FastAPI API        |
+                |  /quotes  /history  /news   |
+                |  /portfolio  /analytics     |
+                |  /alerts  /alerts/events   |
+                |  /ai/insights  /reports    |
+                +-----------------------------+
+                  |       |            |
+                  |       |            |
+                  v       v            v
+           +----------+  +-----------------+   +------------------------+
+           | Postgres |  | Market Data APIs|   |   GDELT Doc 2.0 API    |
+           |  (or SQLite)  |  TwelveData / CG |   | (news + headlines)     |
+           +----------+  +-----------------+   +------------------------+
+
+   - Background jobs:
+     - RealtimeStreamer: polls providers, pushes ticks via WebSocket
+     - AlertScheduler: APScheduler job evaluating alerts → DB + WebSocket
+```
+
+---
+
 ## Repo Structure
 
 ```text
@@ -28,7 +63,7 @@ apps/
   web/         # Next.js frontend
 
 context/       # Grounding docs for goals, architecture, decisions, rules
-notebooks/     # Placeholder for future research notebooks
+notebooks/     # EDA / modeling notebooks
 
 .github/
   workflows/
@@ -43,12 +78,13 @@ README.md
 
 ## Backend – FastAPI (apps/api)
 
-### Features (MVP)
+### Features
 
 - REST API:
   - `GET /health`
-  - `GET /api/v1/quotes?symbols=...&amp;asset_type=stock|crypto`
-  - `GET /api/v1/history?symbol=...&amp;asset_type=...&amp;interval=...&amp;range=...`
+  - Market data:
+    - `GET /api/v1/quotes?symbols=...&asset_type=stock|crypto`
+    - `GET /api/v1/history?symbol=...&asset_type=...&interval=...&range=...`
   - Watchlists:
     - `POST /api/v1/watchlists`
     - `GET /api/v1/watchlists/{id}`
@@ -58,16 +94,33 @@ README.md
     - `POST /api/v1/holdings`
     - `GET /api/v1/holdings`
     - `GET /api/v1/portfolio/summary`
-  - Alerts (MVP):
+  - Alerts:
     - `POST /api/v1/alerts`
     - `GET /api/v1/alerts`
-    - `POST /api/v1/alerts/{id}/test-evaluate`
+    - `GET /api/v1/alerts/events`
+    - `POST /api/v1/alerts/{id}/test-evaluate` (price-only smoke test)
+  - News & sentiment (GDELT, free tier):
+    - `GET /api/v1/news?symbol=...&asset_type=stock|crypto`
+      - Returns recent headlines, per-article sentiment score and explanation.
+  - Analytics:
+    - `GET /api/v1/analytics/portfolio` – volatility, max drawdown, Sharpe, daily series
+    - `GET /api/v1/analytics/benchmark?symbol=SPY&asset_type=stock`
+  - Reports:
+    - `POST /api/v1/reports/portfolio.pdf` – simple portfolio PDF (holdings + summary)
+  - AI / ML insights (lightweight, local training):
+    - `GET /api/v1/ai/insights?symbol=...&asset_type=...`
+      - Technical view (RSI / MACD state)
+      - Short-horizon linear regression forecast (with naive interval)
+      - IsolationForest-based anomaly flags on returns
+      - Strong disclaimer that this is **not investment advice**
 - WebSockets:
   - `GET /ws/stream`
   - Protocol:
     - Client → server: `{"type":"subscribe","symbols":["AAPL","MSFT"],"assetType":"stock"}`
-    - Server → client: `{"type":"tick","symbol":"AAPL","assetType":"stock","price":..., ...}`
-    - Heartbeats: server sends `{"type":"heartbeat"}` periodically
+    - Server → client:
+      - Ticks: `{"type":"tick","symbol":"AAPL","assetType":"stock","price":..., ...}`
+      - Alerts: `{"type":"alert","alertId":1,"symbol":"AAPL","message":"...","ts":"..."}`  
+      - Heartbeats: `{"type":"heartbeat"}` periodically
 
 ### Tech stack
 
@@ -75,7 +128,9 @@ README.md
 - FastAPI
 - SQLAlchemy + Alembic (Postgres in production, SQLite allowed locally)
 - Pydantic v2 + pydantic-settings
-- httpx for Twelve Data / CoinGecko
+- httpx for Twelve Data / CoinGecko / GDELT Doc API
+- APScheduler for alert evaluation
+- Lightweight ML: scikit-learn (LinearRegression, IsolationForest)
 - pytest, pytest-asyncio
 - ruff, mypy
 
@@ -89,9 +144,13 @@ See `apps/api/.env.example`:
 - `TWELVE_DATA_API_KEY`
 - `TWELVE_DATA_BASE_URL` (default `https://api.twelvedata.com`)
 - `COINGECKO_BASE_URL` (default `https://api.coingecko.com/api/v3`)
+- `GDELT_BASE_URL` (default `https://api.gdeltproject.org/api/v2/doc/doc`)
+- `NEWS_TTL_SECONDS` – cache TTL per symbol for news
 - `QUOTES_TTL_SECONDS`, `HISTORY_TTL_SECONDS`
 - `PROVIDER_RATE_LIMIT_CAPACITY`, `PROVIDER_RATE_LIMIT_REFILL_PER_SECOND`
 - `WEBSOCKET_HEARTBEAT_INTERVAL_SECONDS`, `WEBSOCKET_STREAM_INTERVAL_SECONDS`
+- `ALERTS_SCHEDULER_INTERVAL_SECONDS`, `ALERTS_MIN_EVENT_INTERVAL_SECONDS`
+- `ALERTS_RSI_PERIOD`, `ALERTS_MA_SHORT_WINDOW`, `ALERTS_MA_LONG_WINDOW`
 
 Copy `.env.example` to `.env` and adjust as needed.
 

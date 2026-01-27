@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db_session, get_market_data_service
 from app.core.errors import NotFoundError
-from app.db.models import Alert, AlertDirection
-from app.schemas.alerts import AlertCreate, AlertEvaluationResult, AlertRead
+from app.db.models import Alert, AlertDirection, AlertEvent
+from app.schemas.alerts import (
+    AlertCreate,
+    AlertEvaluationResult,
+    AlertEventRead,
+    AlertRead,
+)
 from app.services.market_data.service import MarketDataService
 
 router = APIRouter()
@@ -38,6 +43,43 @@ def list_alerts(
     return [AlertRead.model_validate(a) for a in alerts]
 
 
+@router.get("/events", response_model=list[AlertEventRead])
+def list_alert_events(
+    db: Session = Depends(get_db_session),
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description="Maximum number of recent events to return.",
+    ),
+) -> list[AlertEventRead]:
+    """Return recent alert events, newest first."""
+    query = (
+        db.query(AlertEvent, Alert)
+        .join(Alert, AlertEvent.alert_id == Alert.id)
+        .order_by(AlertEvent.fired_at.desc())
+        .limit(limit)
+    )
+    rows = query.all()
+
+    results: list[AlertEventRead] = []
+    for event, alert in rows:
+        results.append(
+            AlertEventRead(
+                id=event.id,
+                alert_id=event.alert_id,
+                symbol=alert.symbol,
+                asset_type=alert.asset_type,
+                direction=alert.direction,
+                message=event.message,
+                fired_at=event.fired_at,
+                status=event.status,
+                payload=event.payload,
+            )
+        )
+    return results
+
+
 @router.post("/{alert_id}/test-evaluate", response_model=AlertEvaluationResult)
 async def test_evaluate_alert(
     alert_id: int = Path(..., ge=1),
@@ -56,7 +98,15 @@ async def test_evaluate_alert(
 
     if alert.direction is AlertDirection.PRICE_ABOVE:
         triggered = current_price >= alert.threshold
-    else:
+    elif alert.direction is AlertDirection.PRICE_BELOW:
         triggered = current_price <= alert.threshold
+    elif alert.direction is AlertDirection.RSI_ABOVE:
+        # For test-evaluate, only price-based evaluation is performed.
+        triggered = False
+    elif alert.direction is AlertDirection.RSI_BELOW:
+        triggered = False
+    else:
+        # MA_CROSS and other technical alerts are evaluated by the scheduler.
+        triggered = False
 
     return AlertEvaluationResult(alert_id=alert.id, triggered=triggered, current_price=current_price)

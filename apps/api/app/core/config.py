@@ -41,6 +41,16 @@ class AppSettings(BaseSettings):
         description="Base URL for CoinGecko API.",
     )
 
+    # News / GDELT
+    gdelt_base_url: str = Field(
+        default="https://api.gdeltproject.org/api/v2/doc/doc",
+        description="Base URL for the GDELT Doc 2.0 API.",
+    )
+    news_ttl_seconds: int = Field(
+        default=1800,
+        description="TTL for cached news responses per symbol (seconds).",
+    )
+
     # Market data caching and rate limiting
     quotes_ttl_seconds: int = Field(
         default=10, description="TTL for latest quote cache entries (seconds)."
@@ -65,6 +75,31 @@ class AppSettings(BaseSettings):
     websocket_stream_interval_seconds: int = Field(
         default=5,
         description="Interval for background streamer to poll providers.",
+    )
+
+    # Alerts / scheduler
+    alerts_scheduler_interval_seconds: int = Field(
+        default=60,
+        description="Interval for evaluating active alerts (seconds).",
+    )
+    alerts_min_event_interval_seconds: int = Field(
+        default=300,
+        description=(
+            "Minimum time between events for the same alert (seconds). "
+            "Prevents spamming repeated notifications when conditions remain true."
+        ),
+    )
+    alerts_rsi_period: int = Field(
+        default=14,
+        description="Lookback period for RSI-based alerts.",
+    )
+    alerts_ma_short_window: int = Field(
+        default=10,
+        description="Window length for short moving average in MA cross alerts.",
+    )
+    alerts_ma_long_window: int = Field(
+        default=30,
+        description="Window length for long moving average in MA cross alerts.",
     )
 
     # Logging

@@ -90,14 +90,43 @@ This project uses **free-tier friendly** data providers for stocks and crypto. T
 
 ---
 
-## 3. News and Sentiment (Future Work)
+## 3. News and Sentiment – GDELT Doc 2.0
 
-In Prompt 2 (future work), we plan to integrate:
+**Provider:** [GDELT](https://www.gdeltproject.org/) – Doc 2.0 API (no API key required)
 
-- **GDELT** as a news and event data source
-- Simple sentiment or event tagging for symbols
+**Usage:**
 
-Those details will be captured in an updated version of this file and the `DECISIONS.md` document.
+- Symbol-level news feed for stocks and crypto:
+  - `GET /api/v1/news?symbol=AAPL&asset_type=stock`
+- Under the hood:
+  - Calls the Doc 2.0 API: `https://api.gdeltproject.org/api/v2/doc/doc`
+  - Mode: `ArtList`, `format=json`, sorted by most recent
+  - Time window: last few hours (configurable via code; currently 8h)
+- Backend filters:
+  - English-language articles only (to match VADER's lexicon)
+  - Extracts title, URL, domain, language, and `seendate`
+
+**Sentiment:**
+
+- Implementation: `HeadlineSentimentAnalyzer` using **VADER** (`vaderSentiment` library)
+- For each headline:
+  - Computes compound sentiment score in `[-1, 1]`
+  - Maps to label: `positive`, `neutral`, or `negative`
+  - Extracts top positive/negative words from VADER's lexicon to build a short explanation
+- Exposed via `NewsArticle.sentiment` payload in the API.
+
+**Caching:**
+
+- `GDELTClient` uses `InMemoryCache` under the key `("gdelt", symbol, asset_type)`.
+- TTL configured via `NEWS_TTL_SECONDS` (default: 1800s / 30 minutes).
+- This dramatically reduces repeated calls for the same symbol.
+
+**Degradation behavior:**
+
+- On HTTP errors / non-200 / JSON decode errors:
+  - Log a warning and return an **empty list** of articles.
+  - The UI falls back to a “No recent headlines” message.
+- No retries are implemented by default to avoid hammering free-tier resources.
 
 ---
 

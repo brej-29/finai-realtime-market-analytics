@@ -79,15 +79,33 @@ class MarketDataService:
         cache_key = ("history", asset_type.value, symbol, interval, range_)
         cached = self.cache.get(cache_key)
         if cached is not None:
-            bars, _ = cached
-            if isinstance(bars, list):
+            bars, is_stale = cached
+            if isinstance(bars, list) and not is_stale:
                 return bars
 
         provider = self._get_provider(asset_type)
 
-        bars = await provider.get_history(symbol=symbol, interval=interval, range_=range_)
-        self.cache.set(cache_key, bars, ttl_seconds=self.settings.history_ttl_seconds)
-        return bars
+        try:
+            bars = await provider.get_history(symbol=symbol, interval=interval, range_=range_)
+            self.cache.set(cache_key, bars, ttl_seconds=self.settings.history_ttl_seconds)
+            return bars
+        except ProviderError as exc:
+            logger.warning(
+                "Provider error when fetching history; attempting to use stale cache",
+                extra={
+                    "asset_type": asset_type.value,
+                    "symbol": symbol,
+                    "interval": interval,
+                    "range": range_,
+                    "error": str(exc),
+                },
+            )
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                bars, _ = cached
+                if isinstance(bars, list):
+                    return bars
+            raise
 
     def _get_provider(self, asset_type: AssetType):
         if asset_type is AssetType.STOCK:
