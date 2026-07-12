@@ -30,6 +30,33 @@ def create_watchlist(
     return WatchlistRead.model_validate(watchlist)
 
 
+@router.get("/default", response_model=WatchlistRead)
+def get_or_create_default_watchlist(
+    db: Session = Depends(get_db_session),
+) -> WatchlistRead:
+    """Return the shared default watchlist, creating it if it does not exist yet.
+
+    The MVP is single-user, so the frontend works against one well-known
+    watchlist instead of tracking IDs client-side.
+    """
+    watchlist = db.query(Watchlist).filter(Watchlist.name == "Default").order_by(Watchlist.id).first()
+    if not watchlist:
+        watchlist = Watchlist(name="Default")
+        db.add(watchlist)
+        db.commit()
+        db.refresh(watchlist)
+    items = [
+        WatchlistItemRead.model_validate(item)
+        for item in watchlist.items  # type: ignore[attr-defined]
+    ]
+    return WatchlistRead(
+        id=watchlist.id,
+        name=watchlist.name,
+        created_at=watchlist.created_at,
+        items=items,
+    )
+
+
 @router.get("/{watchlist_id}", response_model=WatchlistRead)
 def get_watchlist(
     watchlist_id: int = Path(..., ge=1),

@@ -35,10 +35,26 @@ export function useRealtimePrices(options: UseRealtimePricesOptions): UseRealtim
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
   const symbolsRef = useRef(symbols);
+  // Key on contents (not array identity) so re-renders with equal symbol lists
+  // don't trigger duplicate subscribe messages.
+  const symbolsKey = symbols.join(",");
 
   useEffect(() => {
     symbolsRef.current = symbols;
-  }, [symbols]);
+    // Re-subscribe when the symbol list changes after the socket is already
+    // open (e.g. watchlist items load from the API after connect).
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN && symbols.length > 0) {
+      ws.send(
+        JSON.stringify({
+          type: "subscribe",
+          symbols,
+          assetType
+        })
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolsKey, assetType]);
 
   useEffect(() => {
     let cancelled = false;

@@ -216,3 +216,10 @@ pnpm-debug.log*
 apps/web/.next/
 apps/web/out/
 apps/web/.turbo/
+
+# Local env variants and editor/agent tooling
+.env.local
+.claude/
+
+# TypeScript incremental build info
+*.tsbuildinfo

@@ -58,6 +58,17 @@ def create_app() -> FastAPI:
         if settings.env in ("local", "test"):
             Base.metadata.create_all(bind=engine)
 
+        # Optionally seed demo data (no-op when the database already has data).
+        if settings.seed_demo_data:
+            from app.db.seed import seed_demo_data
+            from app.db.session import SessionLocal
+
+            db = SessionLocal()
+            try:
+                seed_demo_data(db)
+            finally:
+                db.close()
+
         # Shared market data service instance
         market_data_service = build_market_data_service(settings)
         app.state.market_data_service = market_data_service  # type: ignore[assignment]

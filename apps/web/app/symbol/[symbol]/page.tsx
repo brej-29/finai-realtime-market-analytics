@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+
+import { useSearchParams } from "next/navigation";
 
 import {
   CandlestickChart,
   type CandlePoint,
   type IndicatorSeries
 } from "../../../components/charts/CandlestickChart";
-import { useRealtimePrices } from "../../../hooks/useRealtimePrices";
+import { useRealtimePrices, type AssetType } from "../../../hooks/useRealtimePrices";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -111,14 +113,17 @@ function getApiBase(): string {
   return "http://localhost:8000";
 }
 
-export default function SymbolDetailPage({ params }: PageProps) {
+function SymbolDetail({ params }: PageProps) {
   const [history, setHistory] = useState<HistoryBar[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsUpdatedAt, setNewsUpdatedAt] = useState<string | null>(null);
   const [aiInsights, setAiInsights] = useState<AIInsights | null>(null);
 
   const symbol = params.symbol.toUpperCase();
-  const { status, ticks } = useRealtimePrices({ symbols: [symbol], assetType: "stock" });
+  const searchParams = useSearchParams();
+  const assetType: AssetType =
+    searchParams.get("asset_type") === "crypto" ? "crypto" : "stock";
+  const { status, ticks } = useRealtimePrices({ symbols: [symbol], assetType });
   const latest = ticks[symbol];
 
   useEffect(() => {
@@ -127,14 +132,14 @@ export default function SymbolDetailPage({ params }: PageProps) {
         const apiBase = getApiBase();
         const historyUrl = new URL(`${apiBase}/api/v1/history`);
         historyUrl.searchParams.set("symbol", symbol);
-        historyUrl.searchParams.set("asset_type", "stock");
+        historyUrl.searchParams.set("asset_type", assetType);
         historyUrl.searchParams.set("interval", "1h");
         historyUrl.searchParams.set("range", "1d");
 
         const [historyResp, newsResp, aiResp] = await Promise.all([
           fetch(historyUrl.toString()),
-          fetch(`${apiBase}/api/v1/news?symbol=${symbol}&asset_type=stock`),
-          fetch(`${apiBase}/api/v1/ai/insights?symbol=${symbol}&asset_type=stock`)
+          fetch(`${apiBase}/api/v1/news?symbol=${symbol}&asset_type=${assetType}`),
+          fetch(`${apiBase}/api/v1/ai/insights?symbol=${symbol}&asset_type=${assetType}`)
         ]);
 
         if (historyResp.ok) {
@@ -157,7 +162,7 @@ export default function SymbolDetailPage({ params }: PageProps) {
       }
     }
     loadHistoryAndInsights();
-  }, [symbol]);
+  }, [symbol, assetType]);
 
   const candles: CandlePoint[] = useMemo(
     () =>
@@ -203,7 +208,12 @@ export default function SymbolDetailPage({ params }: PageProps) {
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">{symbol}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">{symbol}</h1>
+            <span className="rounded-full border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
+              {assetType}
+            </span>
+          </div>
           <p className="text-sm text-slate-400">
             Intraday performance with technical indicators, news, and lightweight AI insights.
           </p>
@@ -343,5 +353,14 @@ export default function SymbolDetailPage({ params }: PageProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SymbolDetailPage(props: PageProps) {
+  // useSearchParams requires a Suspense boundary in the App Router.
+  return (
+    <Suspense fallback={null}>
+      <SymbolDetail {...props} />
+    </Suspense>
   );
 }

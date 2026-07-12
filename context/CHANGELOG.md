@@ -158,3 +158,31 @@ Details of implementation are in the corresponding PR description and context do
     - Ensures API tests do not hit real external providers.
     - Fixed a syntax/merge issue and clarified health/CRUD tests.
   - Ensured new commands and scripts used in docs correspond to real Make targets and PowerShell scripts.
+
+---
+
+## 2026-07-12 – Phase 1: Finish & Ship (demo mode, asset-type fixes, deploy readiness)
+
+**Scope:**
+
+- **Demo data seeding**
+  - New `app/db/seed.py`: idempotent seeder for a default watchlist (5 symbols), sample portfolio (5 holdings), and 3 alerts.
+  - `SEED_DEMO_DATA` env flag seeds on startup when the DB is empty (needed on free tiers without shell access); also runnable via `python -m app.db.seed`, `make db-seed`, and `scripts/db.ps1 -Action seed`.
+
+- **Bug fixes (backend)**
+  - CoinGecko provider now maps ticker symbols to CoinGecko coin ids (`BTC` → `bitcoin`); previously all crypto quotes and history silently returned empty/404.
+  - `GET /api/v1/portfolio/summary` degrades to cost basis when a market-data provider errors instead of returning `provider_error`.
+  - New `GET /api/v1/watchlists/default` (get-or-create) so the frontend no longer creates a duplicate watchlist on every add.
+  - Logging: third-party log records (uvicorn, apscheduler, httpx) no longer crash the JSON formatter with `KeyError: 'request_id'`.
+  - mypy `python_version` bumped to 3.12 so modern numpy stubs (PEP 695 `type` statements) parse.
+
+- **Bug fixes / features (frontend)**
+  - Home page now renders the real portfolio summary (market value, unrealized P&L $ and %, allocation by asset class) instead of hardcoded `$0.00` placeholders.
+  - Symbol detail page reads `?asset_type=` (stock|crypto) instead of hardcoding stock for history/news/AI insights; shows an asset-type badge; wrapped in Suspense for `useSearchParams`.
+  - Watchlist page: uses the default-watchlist endpoint, adds a stock/crypto selector, links symbols to their detail pages, supports item removal, and streams mixed stock+crypto ticks.
+  - Alerts page: asset-type selector and correct labels for RSI/MA-cross alert conditions.
+  - `useRealtimePrices` re-sends the subscribe message when the symbol list changes after the socket is open (previously symbols loaded after connect were never subscribed).
+  - Next.js upgraded 14.1.0 → 14.2.35 (security patches).
+
+- **Docs**
+  - README rewritten as a recruiter-facing overview: features, architecture, engineering highlights, honest limitations, roadmap (MCP + multi-agent research layer next).

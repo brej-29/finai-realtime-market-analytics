@@ -74,7 +74,7 @@ db-migrate:
 	cd apps/api &amp;&amp; alembic upgrade head
 
 db-seed:
-	@echo "No DB seed script is defined yet; skipping."
+	cd apps/api && python -m app.db.seed
 
 # --- Cleanup ---
 

@@ -26,7 +26,13 @@ switch ($Action) {
         }
     }
     "seed" {
-        Write-Host "No DB seed script is defined yet; nothing to do."
+        Write-Host "Seeding demo data (skipped when the database already has data)..."
+        Push-Location "apps/api"
+        try {
+            python -m app.db.seed
+        } finally {
+            Pop-Location
+        }
     }
 }
 

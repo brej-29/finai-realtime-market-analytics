@@ -11,6 +11,19 @@ from fastapi import FastAPI, Request, Response
 from app.core.config import get_settings
 
 
+class _RequestIdDefaultFilter(logging.Filter):
+    """Default request_id for records from libraries that don't set it.
+
+    Without this, any log record emitted by third-party code (uvicorn,
+    apscheduler, httpx, ...) crashes the formatter with KeyError: 'request_id'.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        return True
+
+
 def configure_logging() -> None:
     """Configure root logging for the application.
 
@@ -28,6 +41,7 @@ def configure_logging() -> None:
         datefmt="%Y-%m-%dT%H:%M:%S%z",
     )
     handler.setFormatter(formatter)
+    handler.addFilter(_RequestIdDefaultFilter())
 
     root = logging.getLogger()
     root.setLevel(log_level)

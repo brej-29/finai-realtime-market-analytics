@@ -12,9 +12,18 @@ interface AlertRow {
   created_at: string;
 }
 
+const DIRECTION_LABELS: Record<string, string> = {
+  price_above: "Price above",
+  price_below: "Price below",
+  rsi_above: "RSI above",
+  rsi_below: "RSI below",
+  ma_cross: "MA cross"
+};
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [symbol, setSymbol] = useState("");
+  const [assetType, setAssetType] = useState<"stock" | "crypto">("stock");
   const [direction, setDirection] = useState<"price_above" | "price_below">("price_above");
   const [threshold, setThreshold] = useState("");
 
@@ -44,7 +53,7 @@ export default function AlertsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: symbol.trim().toUpperCase(),
-          asset_type: "stock",
+          asset_type: assetType,
           direction,
           threshold: parseFloat(threshold)
         })
@@ -81,6 +90,15 @@ export default function AlertsPage() {
           className="min-w-[120px] flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-brand-light"
         />
         <select
+          value={assetType}
+          onChange={(e) => setAssetType(e.target.value as "stock" | "crypto")}
+          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-brand-light"
+          aria-label="Asset type"
+        >
+          <option value="stock">Stock</option>
+          <option value="crypto">Crypto</option>
+        </select>
+        <select
           value={direction}
           onChange={(e) => setDirection(e.target.value as any)}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-brand-light"
@@ -108,7 +126,8 @@ export default function AlertsPage() {
           <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-3 py-2 text-left">Symbol</th>
-              <th className="px-3 py-2 text-left">Direction</th>
+              <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-left">Condition</th>
               <th className="px-3 py-2 text-right">Threshold</th>
               <th className="px-3 py-2 text-center">Active</th>
             </tr>
@@ -117,8 +136,9 @@ export default function AlertsPage() {
             {alerts.map((a) => (
               <tr key={a.id}>
                 <td className="px-3 py-2 text-slate-100">{a.symbol}</td>
+                <td className="px-3 py-2 text-xs uppercase text-slate-400">{a.asset_type}</td>
                 <td className="px-3 py-2 text-slate-300">
-                  {a.direction === "price_above" ? "Price above" : "Price below"}
+                  {DIRECTION_LABELS[a.direction] ?? a.direction}
                 </td>
                 <td className="px-3 py-2 text-right">${a.threshold.toFixed(2)}</td>
                 <td className="px-3 py-2 text-center text-xs">
@@ -137,7 +157,7 @@ export default function AlertsPage() {
             {alerts.length === 0 && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   className="px-3 py-4 text-center text-sm text-slate-500"
                 >
                   No alerts yet. Create one above to get started.

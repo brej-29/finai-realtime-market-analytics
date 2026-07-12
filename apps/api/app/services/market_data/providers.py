@@ -205,6 +205,38 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
         return bars
 
 
+# Ticker symbol -> CoinGecko coin id for commonly traded assets. CoinGecko's
+# API is keyed by coin id (e.g. "bitcoin"), not ticker ("btc"). Symbols not in
+# this map are passed through unchanged, since some coin ids match their ticker.
+_COINGECKO_IDS: dict[str, str] = {
+    "btc": "bitcoin",
+    "eth": "ethereum",
+    "usdt": "tether",
+    "bnb": "binancecoin",
+    "sol": "solana",
+    "usdc": "usd-coin",
+    "xrp": "ripple",
+    "doge": "dogecoin",
+    "ada": "cardano",
+    "trx": "tron",
+    "avax": "avalanche-2",
+    "shib": "shiba-inu",
+    "dot": "polkadot",
+    "link": "chainlink",
+    "matic": "matic-network",
+    "ltc": "litecoin",
+    "uni": "uniswap",
+    "atom": "cosmos",
+    "xlm": "stellar",
+    "near": "near",
+}
+
+
+def _coingecko_id(symbol: str) -> str:
+    normalized = symbol.lower()
+    return _COINGECKO_IDS.get(normalized, normalized)
+
+
 class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
     """Market data provider for crypto quotes and charts using CoinGecko."""
 
@@ -279,9 +311,9 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
 
         self.rate_limit_guard.acquire()
 
-        ids = ",".join(symbol_list)
+        id_by_symbol = {symbol: _coingecko_id(symbol) for symbol in symbol_list}
         params: dict[str, str] = {
-            "ids": ids,
+            "ids": ",".join(id_by_symbol.values()),
             "vs_currencies": "usd",
             "include_24hr_change": "true",
         }
@@ -294,7 +326,7 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
         quotes: list[Quote] = []
 
         for symbol in symbol_list:
-            payload = data.get(symbol)
+            payload = data.get(id_by_symbol[symbol])
             if not isinstance(payload, dict):
                 continue
             try:
@@ -339,7 +371,7 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
             "vs_currency": "usd",
             "days": str(days),
         }
-        url = f"{self.base_url}/coins/{symbol.lower()}/market_chart"
+        url = f"{self.base_url}/coins/{_coingecko_id(symbol)}/market_chart"
 
         response = await self._request_with_backoff(url, params, context="history")
 

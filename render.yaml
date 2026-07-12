@@ -1,0 +1,28 @@
+# Render Blueprint — deploys the FastAPI backend as a free web service.
+# Database: use a free Neon Postgres (https://neon.tech) and paste its URL
+# below when prompted (Render's own free Postgres expires after 30 days).
+services:
+  - type: web
+    name: finai-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        sync: false # postgresql+psycopg2://user:password@host/dbname (Neon)
+      - key: TWELVE_DATA_API_KEY
+        sync: false # free key from https://twelvedata.com
+      - key: BACKEND_CORS_ORIGINS
+        sync: false # e.g. https://your-app.vercel.app,http://localhost:3000
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: WEBSOCKET_STREAM_INTERVAL_SECONDS
+        value: "10"
+      - key: ALERTS_SCHEDULER_INTERVAL_SECONDS
+        value: "120"
