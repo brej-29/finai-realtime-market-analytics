@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db_session, get_market_data_service
+from app.core.errors import ProviderError
 from app.db.models import AssetType, Holding
 from app.schemas.portfolio import HoldingCreate, HoldingRead, PortfolioSummary, PortfolioSummaryByType
 from app.services.market_data.service import MarketDataService
@@ -62,7 +63,12 @@ async def get_portfolio_summary(
     quotes_by_key: dict[tuple[AssetType, str], float] = {}
     for asset_type, type_holdings in by_type.items():
         symbols = {h.symbol for h in type_holdings}
-        quotes = await market_data.get_quotes(asset_type=asset_type, symbols=list(symbols))
+        try:
+            quotes = await market_data.get_quotes(asset_type=asset_type, symbols=list(symbols))
+        except ProviderError:
+            # Degrade gracefully: positions without a live quote fall back to
+            # their average price below, so the summary still renders.
+            continue
         for quote in quotes:
             quotes_by_key[(quote.asset_type, quote.symbol)] = quote.price
 

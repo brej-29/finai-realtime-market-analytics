@@ -24,7 +24,9 @@ known-first-party = ["app"]
 force-sort-within-sections = true
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12+ so mypy can parse PEP 695 `type` statements in modern numpy stubs;
+# runtime still supports Python 3.11.
+python_version = "3.12"
 pretty = true
 show_error_codes = true
 strict = false

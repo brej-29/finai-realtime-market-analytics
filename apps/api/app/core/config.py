@@ -112,6 +112,17 @@ class AppSettings(BaseSettings):
         description="Window length for long moving average in MA cross alerts.",
     )
 
+    # Demo data
+    seed_demo_data: bool = Field(
+        default=False,
+        alias="SEED_DEMO_DATA",
+        description=(
+            "Seed a demo watchlist, portfolio, and alerts on startup when the "
+            "database is empty. Useful for free-tier deployments where running "
+            "one-off commands is not possible."
+        ),
+    )
+
     # Logging
     log_level: str = Field(default="INFO", description="Root log level.")
 

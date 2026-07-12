@@ -118,6 +118,59 @@ def test_watchlists_crud(client: TestClient) -> None:
     assert resp.json()["success"] is True
 
 
+def test_default_watchlist_get_or_create(client: TestClient) -> None:
+    # First call creates the default watchlist
+    resp = client.get("/api/v1/watchlists/default")
+    assert resp.status_code == 200
+    first = resp.json()
+    assert first["name"] == "Default"
+    assert first["items"] == []
+
+    # Second call returns the same watchlist instead of creating another
+    resp = client.get("/api/v1/watchlists/default")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == first["id"]
+
+    # Items added to it show up on subsequent fetches
+    resp = client.post(
+        f"/api/v1/watchlists/{first['id']}/items",
+        json={"symbol": "BTC", "asset_type": "crypto"},
+    )
+    assert resp.status_code == 201
+    resp = client.get("/api/v1/watchlists/default")
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["symbol"] == "BTC"
+    assert items[0]["asset_type"] == "crypto"
+
+
+def test_seed_demo_data_is_idempotent(client: TestClient) -> None:
+    from app.db.seed import seed_demo_data
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        assert seed_demo_data(db) is True
+        # Second run must be a no-op
+        assert seed_demo_data(db) is False
+    finally:
+        db.close()
+
+    resp = client.get("/api/v1/watchlists/default")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Default"
+    assert len(data["items"]) == 5
+
+    resp = client.get("/api/v1/holdings")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 5
+
+    resp = client.get("/api/v1/alerts")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 3
+
+
 def test_alerts_create_and_list(client: TestClient) -> None:
     resp = client.post(
         "/api/v1/alerts",
