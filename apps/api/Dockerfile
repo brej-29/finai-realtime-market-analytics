@@ -18,4 +18,6 @@ WORKDIR /app/apps/api
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run migrations on boot (free-tier hosts have no shell for one-off commands),
+# then serve. $PORT is provided by Render; defaults to 8000 elsewhere.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
