@@ -271,4 +271,80 @@ This document captures **architectural and design decisions** that shape the pro
 
 ---
 
+## 2026-07-12 – Multi-Agent Research Desk + MCP Server (Phase 2)
+
+### D15: Manual Tool-Use Loop over Anthropic SDK Agent/Runner Helpers
+
+**Options considered:**
+
+- Anthropic SDK's beta tool runner (`client.beta.messages.tool_runner`)
+- A hand-rolled manual agentic loop (`client.messages.create` + explicit `tool_use` handling)
+- A third-party agent framework (LangChain, CrewAI, etc.)
+
+**Decision:**
+
+- Implement a small manual tool-use loop (`app/services/research/agents.py: run_agent`) instead of a framework or the beta runner.
+
+**Rationale:**
+
+- The loop is ~40 lines and fully visible — no framework abstraction to explain in an interview.
+- Full control over per-agent max iterations, error isolation (one analyst failing must not sink the run), and token accounting.
+- Avoids a beta-only SDK surface and a third-party dependency for a three-tool, few-iteration workflow.
+
+### D16: Three Parallel Specialist Agents + One Synthesis Call
+
+**Decision:**
+
+- Run a technical analyst, a news/sentiment analyst, and a risk analyst concurrently (`asyncio.gather`), each with its own system prompt and a narrow tool subset.
+- Merge their notes with a final synthesis call into a single cited markdown brief.
+
+**Rationale:**
+
+- Narrow per-agent tool sets keep each agent's context small and its behavior predictable (the technical analyst never fetches news, etc.).
+- Running agents in parallel keeps wall-clock latency close to a single agent's, not 3x.
+- A separate synthesis step forces explicit reconciliation of disagreeing analysts, which reads as a genuine "lead analyst" pass rather than string concatenation.
+
+### D17: Tools Wrap Existing Services — No New Data Sources
+
+**Decision:**
+
+- `ResearchToolbox` (`app/services/research/tools.py`) wraps the platform's existing `MarketDataService`, `GDELTClient`, indicator functions, and ML models. No new external APIs were introduced for Phase 2.
+
+**Rationale:**
+
+- Keeps Phase 2 free-tier friendly — no new provider rate limits or costs beyond the LLM calls themselves.
+- Guarantees the agents' claims are traceable to the same data the rest of the UI shows.
+- The same toolbox backs both the research agents and the MCP server (D19), so behavior is identical across both surfaces.
+
+### D18: Model Choice — Claude Haiku by Default, Cost Guards on the Demo
+
+**Options considered:**
+
+- Claude Sonnet/Opus for every agent (higher quality, higher cost)
+- Claude Haiku for every agent (near-free, good enough for a scoped research task)
+- Groq or another low-cost/free-tier LLM provider
+
+**Decision:**
+
+- Default `RESEARCH_MODEL` to `claude-haiku-4-5` (configurable via env var). Add a daily run cap (`RESEARCH_DAILY_LIMIT`, default 25) and disable the endpoint entirely (503) when `ANTHROPIC_API_KEY` is unset.
+
+**Rationale:**
+
+- A full 3-agent-plus-synthesis run on Haiku costs roughly a cent, which keeps a public demo affordable on a few dollars of credit.
+- Anthropic's tool-use ergonomics (typed `tool_use`/`tool_result` blocks, mature SDK, MCP interoperability) outweigh chasing a nominally free provider for a demo-scale workload.
+- The daily cap and the disabled-by-default state are the actual cost control for a public deployment — model choice alone isn't sufficient.
+
+### D19: MCP Server as a Thin Wrapper, Not a Second Implementation
+
+**Decision:**
+
+- `app/mcp_server.py` uses the official `mcp` Python SDK (`FastMCP`) and calls `ResearchToolbox.execute` for every tool — no separate business logic.
+
+**Rationale:**
+
+- One code path for "what data can an agent see," reused by both the in-app research agents and any external MCP client (Claude Desktop, Claude Code).
+- Demonstrates a real, working MCP integration without duplicating the service layer.
+
+---
+
 Future decisions should be **added below with a timestamp**, never retroactively edited, to preserve historical reasoning.

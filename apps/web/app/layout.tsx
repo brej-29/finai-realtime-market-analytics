@@ -32,6 +32,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
                 <Link href="/portfolio">Portfolio</Link>
                 <Link href="/alerts">Alerts</Link>
                 <Link href="/analytics">Analytics</Link>
+                <Link href="/research">Research</Link>
               </nav>
               <NotificationCenter />
             </div>
@@ -55,6 +56,9 @@ export default function RootLayout(props: { children: React.ReactNode }) {
               </Link>
               <Link href="/analytics" className="hover:text-brand-light">
                 Analytics
+              </Link>
+              <Link href="/research" className="hover:text-brand-light">
+                Research
               </Link>
             </div>
           </aside>

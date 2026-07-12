@@ -186,3 +186,38 @@ Details of implementation are in the corresponding PR description and context do
 
 - **Docs**
   - README rewritten as a recruiter-facing overview: features, architecture, engineering highlights, honest limitations, roadmap (MCP + multi-agent research layer next).
+
+---
+
+## 2026-07-12 – Phase 2: AI Research Layer (MCP server + multi-agent research desk)
+
+**Scope:**
+
+- **Research tool layer**
+  - New `app/services/research/tools.py`: `ResearchToolbox` wraps existing services (market data, GDELT news, indicators, ML forecast/anomaly detection) as six compact JSON-in/JSON-out tools (`get_quote`, `get_price_history`, `get_technical_indicators`, `get_news_sentiment`, `get_forecast`, `get_anomalies`). No new external data sources — same providers, same caching, same rate limits.
+
+- **Multi-agent orchestrator**
+  - New `app/services/research/agents.py`: three specialist agents (technical, news/sentiment, risk) run concurrently via `asyncio.gather`, each executing a manual Claude tool-use loop against a narrow tool subset; a fourth "lead analyst" call synthesizes their notes into a cited markdown brief.
+  - Manual loop (not the Anthropic SDK's beta tool runner or a third-party framework) for full control over per-agent iteration caps, error isolation, and token accounting; one analyst failing degrades gracefully instead of failing the whole run.
+  - Defaults to `claude-haiku-4-5` (`RESEARCH_MODEL` env var) — a full run costs roughly a cent; `claude-sonnet-5` is a drop-in upgrade for higher-quality synthesis.
+
+- **Research API**
+  - New `research_reports` table (Alembic `0003_research_reports`) persisting status, per-agent sections, tool calls, token usage, and the final report.
+  - `POST /api/v1/research` starts a run as a background task and returns immediately (`202`, status `running`); `GET /api/v1/research/{id}` polls for the result; `GET /api/v1/research` lists recent runs.
+  - Returns `503 research_disabled` when `ANTHROPIC_API_KEY` is unset (the rest of the app is unaffected) and `429 research_daily_limit` once `RESEARCH_DAILY_LIMIT` (default 25) runs have started that UTC day — a cost guard for a public demo deployment.
+
+- **MCP server**
+  - New `app/mcp_server.py`: exposes the same `ResearchToolbox`, plus a `get_portfolio_summary` tool, as an MCP server over stdio (`python -m app.mcp_server`) using the official `mcp` SDK. Connects to Claude Desktop, Claude Code, or any MCP client; config snippet documented in the module docstring and README.
+
+- **Frontend**
+  - New `/research` page: symbol + asset-type form, live status polling while a run is in progress, rendered markdown report, collapsible per-agent working notes with tool-call trace, and a history sidebar of past reports. Handles the disabled/rate-limited states with an inline banner instead of failing silently.
+  - Added `react-markdown` + Tailwind prose-style rules (`.research-markdown` in `globals.css`) for report rendering.
+  - New "Research" nav link in the header and sidebar.
+
+- **Tests**
+  - `apps/api/tests/test_research.py`: orchestrator unit tests against a scripted Anthropic stub (agent tool-use loop, per-agent failure isolation), full API flow test (start → poll → completed, with sections and token usage asserted), disabled/rate-limit/not-found error paths, and an MCP tool-registration smoke test.
+  - All 32 backend tests, ruff, and mypy pass; frontend typecheck and lint pass.
+
+- **Config**
+  - New env vars: `ANTHROPIC_API_KEY`, `RESEARCH_MODEL` (default `claude-haiku-4-5`), `RESEARCH_DAILY_LIMIT` (default 25). Documented in `apps/api/.env.example`.
+  - `requirements.txt`: added `anthropic` and `mcp`.

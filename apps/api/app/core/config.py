@@ -112,6 +112,30 @@ class AppSettings(BaseSettings):
         description="Window length for long moving average in MA cross alerts.",
     )
 
+    # AI research agents (Phase 2)
+    anthropic_api_key: str | None = Field(
+        default=None,
+        alias="ANTHROPIC_API_KEY",
+        description="API key for the Claude API. Research endpoints are disabled when unset.",
+    )
+    research_model: str = Field(
+        default="claude-haiku-4-5",
+        alias="RESEARCH_MODEL",
+        description=(
+            "Claude model used by the research agents. Haiku keeps a full run "
+            "around a cent; set claude-sonnet-5 for higher-quality synthesis."
+        ),
+    )
+    research_max_agent_iterations: int = Field(
+        default=6,
+        description="Max tool-use round trips per analyst agent.",
+    )
+    research_daily_limit: int = Field(
+        default=25,
+        alias="RESEARCH_DAILY_LIMIT",
+        description="Max research runs per UTC day (cost guard for public demos).",
+    )
+
     # Demo data
     seed_demo_data: bool = Field(
         default=False,

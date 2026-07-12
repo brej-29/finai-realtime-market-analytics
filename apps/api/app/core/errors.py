@@ -52,6 +52,16 @@ class BadRequestError(AppError):
     status_code = HTTPStatus.BAD_REQUEST
 
 
+class ResearchDisabledError(AppError):
+    code = "research_disabled"
+    status_code = HTTPStatus.SERVICE_UNAVAILABLE
+
+
+class ResearchLimitError(AppError):
+    code = "research_daily_limit"
+    status_code = HTTPStatus.TOO_MANY_REQUESTS
+
+
 def _app_error_handler(error_cls: Type[AppError]):
     async def handler(request: Request, exc: AppError) -> JSONResponse:  # type: ignore[type-arg]
         logger = get_logger("app.errors")
@@ -111,5 +121,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RateLimitExceededError, _app_error_handler(RateLimitExceededError))
     app.add_exception_handler(NotFoundError, _app_error_handler(NotFoundError))
     app.add_exception_handler(BadRequestError, _app_error_handler(BadRequestError))
+    app.add_exception_handler(ResearchDisabledError, _app_error_handler(ResearchDisabledError))
+    app.add_exception_handler(ResearchLimitError, _app_error_handler(ResearchLimitError))
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]

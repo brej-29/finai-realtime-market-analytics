@@ -63,6 +63,9 @@ apps/api/
       realtime/
         manager.py       # WebSocket connection and subscription manager
         streamer.py      # Background polling + broadcasting
+      research/
+        tools.py         # ResearchToolbox: wraps market data/news/ML as agent tools
+        agents.py        # Multi-agent orchestration (parallel analysts + synthesis)
     api/
       v1/
         routes/
@@ -72,8 +75,10 @@ apps/api/
           watchlists.py
           portfolio.py
           alerts.py
+          research.py    # Multi-agent research runs (POST/GET /api/v1/research)
           websocket.py   # /ws/stream endpoint
         router.py        # Versioned API router
+    mcp_server.py         # FinAI MCP server (stdio) — exposes ResearchToolbox as MCP tools
 
   alembic/
     env.py               # Alembic env config
@@ -100,6 +105,28 @@ apps/api/
   - path, method, status_code
   - latency
 - Protect secrets (API keys, DB URLs) via environment variables and `.env` files (not committed)
+
+---
+
+## AI Research Layer (apps/api) – Multi-Agent + MCP
+
+**Technology:**
+
+- `anthropic` Python SDK (Claude Messages API, manual tool-use loop)
+- `mcp` Python SDK (`FastMCP`) for the standalone MCP server
+
+**Design:**
+
+- `ResearchToolbox` (`services/research/tools.py`) exposes the platform's market data, indicators, news sentiment, forecast, and anomaly detection as a small set of JSON-in/JSON-out tools. It is the single implementation shared by both consumers below.
+- `services/research/agents.py` runs three specialist agents (technical, news/sentiment, risk) concurrently via `asyncio.gather`, each executing its own manual tool-use loop against a narrow tool subset, then merges their notes with one synthesis call into a cited markdown brief.
+- `POST /api/v1/research` starts a run as a FastAPI background task and returns immediately with a `running` report; the frontend polls `GET /api/v1/research/{id}` until it's `completed` or `failed`. Reports (including per-agent notes, tool calls, and token usage) persist in the `research_reports` table.
+- `app/mcp_server.py` runs the same `ResearchToolbox` as an MCP server over stdio, so any MCP client (Claude Desktop, Claude Code) can query live quotes, indicators, sentiment, and the demo portfolio directly.
+
+**Cost & availability controls:**
+
+- The endpoint returns `503 research_disabled` when `ANTHROPIC_API_KEY` is unset — the rest of the app works without it.
+- `RESEARCH_DAILY_LIMIT` (default 25) caps runs per UTC day; exceeding it returns `429 research_daily_limit`.
+- Defaults to `claude-haiku-4-5` (`RESEARCH_MODEL`), keeping a full run at roughly a cent.
 
 ---
 

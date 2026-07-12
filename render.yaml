@@ -18,6 +18,10 @@ services:
         sync: false # postgresql+psycopg2://user:password@host/dbname (Neon)
       - key: TWELVE_DATA_API_KEY
         sync: false # free key from https://twelvedata.com
+      - key: ANTHROPIC_API_KEY
+        sync: false # optional; enables /api/v1/research. Leave blank to disable (503), rest of app unaffected.
+      - key: RESEARCH_DAILY_LIMIT
+        value: "25" # cost guard for the public demo; Claude API usage is not free
       - key: BACKEND_CORS_ORIGINS
         sync: false # e.g. https://your-app.vercel.app,http://localhost:3000
       - key: SEED_DEMO_DATA

@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     portfolio,
     quotes,
     reports,
+    research,
     analytics,
     ai,
     watchlists,
@@ -33,6 +34,7 @@ v1_router.include_router(news.router, prefix="/news", tags=["news"])
 v1_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 v1_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 v1_router.include_router(ai.router, prefix="/ai", tags=["ai"])
+v1_router.include_router(research.router, prefix="/research", tags=["research"])
 
 api_router.include_router(v1_router)
 

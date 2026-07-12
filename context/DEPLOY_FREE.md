@@ -248,6 +248,12 @@ From `apps/api/.env.example`:
   - `COINGECKO_BASE_URL` (default `https://api.coingecko.com/api/v3`).
   - `GDELT_BASE_URL` (default `https://api.gdeltproject.org/api/v2/doc/doc`).
 
+- **AI research desk (optional)**
+
+  - `ANTHROPIC_API_KEY` – from the [Anthropic Console](https://console.anthropic.com/). Leave unset to deploy without the `/research` feature; every other endpoint works fine without it.
+  - `RESEARCH_MODEL` (default `claude-haiku-4-5`) – a full 3-agent research run costs roughly a cent on Haiku.
+  - `RESEARCH_DAILY_LIMIT` (default `25`) – caps research runs per UTC day; important for a public demo since, unlike Twelve Data/CoinGecko/GDELT, Claude API usage is not free.
+
 - **Caching / rate limiting** (optional to override; defaults are sensible):
 
   - `QUOTES_TTL_SECONDS` (e.g. `10`)
@@ -310,6 +316,9 @@ You should see:
 | `TWELVE_DATA_BASE_URL`                 | No        | Override for Twelve Data base URL (default `https://api.twelvedata.com`).                    |
 | `COINGECKO_BASE_URL`                   | No        | CoinGecko base URL (default `https://api.coingecko.com/api/v3`).                             |
 | `GDELT_BASE_URL`                       | No        | GDELT Doc 2.0 base URL (default `https://api.gdeltproject.org/api/v2/doc/doc`).              |
+| `ANTHROPIC_API_KEY`                    | No        | Enables the AI research desk (`/api/v1/research`). Unset = feature disabled (503), rest of app unaffected. |
+| `RESEARCH_MODEL`                       | No        | Claude model for research agents (default `claude-haiku-4-5`).                               |
+| `RESEARCH_DAILY_LIMIT`                 | No        | Max research runs per UTC day (default `25`) — cost guard for public demos.                  |
 | `NEWS_TTL_SECONDS`                     | No        | TTL for cached news responses per symbol (default `1800`).                                   |
 | `QUOTES_TTL_SECONDS`                   | No        | TTL for quote cache entries in seconds (default `10`).                                       |
 | `HISTORY_TTL_SECONDS`                  | No        | TTL for history cache entries in seconds (default `600`).                                    |

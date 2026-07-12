@@ -21,3 +21,37 @@ body {
 .app-content {
   @apply flex-1 p-6 md:p-8;
 }
+
+/* Markdown styling for AI research reports (Tailwind preflight resets these). */
+.research-markdown h2 {
+  @apply mb-2 mt-5 text-base font-semibold text-slate-100 first:mt-0;
+}
+
+.research-markdown h3 {
+  @apply mb-1 mt-4 text-sm font-semibold text-slate-200;
+}
+
+.research-markdown p {
+  @apply mb-3;
+}
+
+.research-markdown ul,
+.research-markdown ol {
+  @apply mb-3 list-disc space-y-1 pl-5;
+}
+
+.research-markdown ol {
+  @apply list-decimal;
+}
+
+.research-markdown strong {
+  @apply font-semibold text-slate-100;
+}
+
+.research-markdown hr {
+  @apply my-4 border-slate-800;
+}
+
+.research-markdown em {
+  @apply text-slate-500;
+}

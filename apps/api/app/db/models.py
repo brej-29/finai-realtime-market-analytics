@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -38,6 +39,12 @@ class AlertEventStatus(str, enum.Enum):
     NEW = "new"
     DELIVERED = "delivered"
     ERROR = "error"
+
+
+class ResearchStatus(str, enum.Enum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class Watchlist(Base):
@@ -126,6 +133,34 @@ class Alert(Base):
         back_populates="alert",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+
+
+class ResearchReport(Base):
+    __tablename__ = "research_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(length=50), nullable=False)
+    asset_type: Mapped[AssetType] = mapped_column(
+        Enum(AssetType, name="research_asset_type_enum", native_enum=False),
+        nullable=False,
+    )
+    status: Mapped[ResearchStatus] = mapped_column(
+        Enum(ResearchStatus, name="research_status_enum", native_enum=False),
+        default=ResearchStatus.RUNNING,
+        nullable=False,
+    )
+    model: Mapped[str] = mapped_column(String(length=100), nullable=False)
+    report_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sections: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

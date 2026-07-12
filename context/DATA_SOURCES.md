@@ -130,6 +130,29 @@ This project uses **free-tier friendly** data providers for stocks and crypto. T
 
 ---
 
+## 3b. AI Research – Anthropic Claude API
+
+**Provider:** [Anthropic](https://www.anthropic.com/) – Claude Messages API (`anthropic` Python SDK)
+
+**Usage:**
+
+- Powers the multi-agent research desk (`POST /api/v1/research`) and is entirely optional — the rest of the app does not depend on it.
+- Not free, but low-cost at this project's scale: the default model, `claude-haiku-4-5`, runs a full 3-agent-plus-synthesis research report for roughly a cent.
+- Each agent makes a small number of tool calls (bounded by `RESEARCH_MAX_AGENT_ITERATIONS` in code, default 6) against `ResearchToolbox`, which wraps existing internal services — no additional external API calls are introduced by the research layer itself.
+
+**Cost controls:**
+
+- `ANTHROPIC_API_KEY` unset → the endpoint returns `503 research_disabled`; no client is constructed and no cost is incurred.
+- `RESEARCH_DAILY_LIMIT` (default 25) caps total runs per UTC day across the deployment; exceeding it returns `429 research_daily_limit`.
+- `RESEARCH_MODEL` is swappable via env var — use `claude-sonnet-5` for higher-quality synthesis if the extra cost is acceptable.
+
+**Degradation behavior:**
+
+- If one analyst agent's API call fails, the run continues with the remaining analysts; the failed section is marked unavailable and synthesis proceeds with a documented gap (see `services/research/agents.py: run_agent`).
+- If a tool call fails (e.g., a market data provider hiccup), the tool returns a structured error string to the model rather than raising, so the agent can reason around missing data instead of crashing the run.
+
+---
+
 ## 4. Caching & Rate Limiting Design
 
 ### In-Memory Cache (per API instance)
