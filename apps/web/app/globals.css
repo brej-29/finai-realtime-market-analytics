@@ -2,8 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --background: 6 8 11;
+  --surface: 15 18 22;
+  --surface-hover: 21 25 30;
+  --border: 255 255 255;
+  --border-hover: 255 255 255;
+  --foreground: 250 250 250;
+  --muted: 148 158 171;
+  --positive: 52 211 153;
+  --negative: 248 113 113;
+  --warning: 251 191 36;
+}
+
+* {
+  border-color: rgb(var(--border) / 0.08);
+}
+
 body {
-  @apply bg-slate-950 text-slate-50;
+  @apply bg-background text-foreground antialiased;
+  background-image: radial-gradient(
+    ellipse 80% 50% at 50% -10%,
+    rgb(20 184 166 / 0.12),
+    transparent
+  );
+  background-attachment: fixed;
+}
+
+::selection {
+  background-color: rgb(20 184 166 / 0.35);
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border) / 0.2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--border) / 0.15);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--border) / 0.3);
+}
+
+/* Consistent focus ring across native + custom controls */
+:focus-visible {
+  outline: 2px solid rgb(20 184 166 / 0.6);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .app-shell {
@@ -15,24 +66,43 @@ body {
 }
 
 .app-sidebar {
-  @apply w-64 border-r border-slate-800 bg-slate-900/60 backdrop-blur;
+  @apply w-60 border-r bg-surface/40 backdrop-blur;
 }
 
 .app-content {
-  @apply flex-1 p-6 md:p-8;
+  @apply flex-1 p-5 md:p-8;
+}
+
+/* Shimmer sweep used by the Skeleton component */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.06),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
 }
 
 /* Markdown styling for AI research reports (Tailwind preflight resets these). */
 .research-markdown h2 {
-  @apply mb-2 mt-5 text-base font-semibold text-slate-100 first:mt-0;
+  @apply mb-2 mt-6 text-base font-semibold text-foreground first:mt-0;
 }
 
 .research-markdown h3 {
-  @apply mb-1 mt-4 text-sm font-semibold text-slate-200;
+  @apply mb-1 mt-4 text-sm font-semibold text-foreground/90;
 }
 
 .research-markdown p {
-  @apply mb-3;
+  @apply mb-3 leading-relaxed;
 }
 
 .research-markdown ul,
@@ -45,13 +115,13 @@ body {
 }
 
 .research-markdown strong {
-  @apply font-semibold text-slate-100;
+  @apply font-semibold text-foreground;
 }
 
 .research-markdown hr {
-  @apply my-4 border-slate-800;
+  @apply my-4 border-border;
 }
 
 .research-markdown em {
-  @apply text-slate-500;
+  @apply text-muted not-italic;
 }

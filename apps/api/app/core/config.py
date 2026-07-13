@@ -69,12 +69,15 @@ class AppSettings(BaseSettings):
         default=600, description="TTL for historical OHLC cache entries (seconds)."
     )
     provider_rate_limit_capacity: int = Field(
-        default=60,
-        description="Token bucket capacity for provider calls (roughly max calls per minute).",
+        default=8,
+        description=(
+            "Token bucket capacity for provider calls (roughly max calls per minute). "
+            "Matches Twelve Data's free-tier cap of 8 requests/min by default."
+        ),
     )
     provider_rate_limit_refill_per_second: float = Field(
-        default=1.0,
-        description="Token bucket refill rate (tokens per second).",
+        default=0.1333,
+        description="Token bucket refill rate (tokens per second); 8/60 to match the free tier.",
     )
 
     # Realtime / WebSockets
@@ -83,14 +86,20 @@ class AppSettings(BaseSettings):
         description="Interval between heartbeat pings to WebSocket clients.",
     )
     websocket_stream_interval_seconds: int = Field(
-        default=5,
-        description="Interval for background streamer to poll providers.",
+        default=10,
+        description=(
+            "Interval for background streamer to poll providers (seconds). "
+            "10s keeps combined polling comfortably under Twelve Data's 8/min free-tier cap."
+        ),
     )
 
     # Alerts / scheduler
     alerts_scheduler_interval_seconds: int = Field(
-        default=60,
-        description="Interval for evaluating active alerts (seconds).",
+        default=120,
+        description=(
+            "Interval for evaluating active alerts (seconds). 120s so the scheduler's own "
+            "quote/history calls don't compound with the realtime streamer's polling."
+        ),
     )
     alerts_min_event_interval_seconds: int = Field(
         default=300,

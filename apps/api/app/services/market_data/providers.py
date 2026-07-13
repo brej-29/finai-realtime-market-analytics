@@ -17,14 +17,32 @@ from app.services.market_data.rate_limiter import RateLimitGuard
 
 logger = get_logger("app.services.market_data")
 
+# Transient server-side errors are worth a quick retry. 429 is deliberately
+# excluded: our free-tier providers enforce a per-minute quota, and retrying
+# within a couple of seconds (our backoff window) can't help — it only burns
+# more of that same quota. Fail fast instead and let the caller fall back to
+# cached data; the shared RateLimitGuard is what actually paces subsequent calls.
 _RETRY_STATUS_CODES = {
-    HTTPStatus.TOO_MANY_REQUESTS,
     HTTPStatus.INTERNAL_SERVER_ERROR,
     HTTPStatus.BAD_GATEWAY,
     HTTPStatus.SERVICE_UNAVAILABLE,
     HTTPStatus.GATEWAY_TIMEOUT,
 }
 _MAX_RETRIES = 3
+
+# The rest of this codebase uses a short "1d"/"1h" interval convention, but
+# Twelve Data's real API only accepts specific strings (see their /time_series
+# docs) — notably "1day", not "1d". "1h" happens to already match theirs, which
+# is why history requests for hourly data worked while daily ones 400'd.
+_TWELVEDATA_INTERVAL_MAP: dict[str, str] = {
+    "1d": "1day",
+    "1w": "1week",
+    "1mo": "1month",
+}
+
+
+def _to_twelvedata_interval(interval: str) -> str:
+    return _TWELVEDATA_INTERVAL_MAP.get(interval, interval)
 
 
 class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
@@ -126,7 +144,11 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
         now = datetime.now(timezone.utc)
         for symbol, payload in items:
             try:
-                price = float(payload["price"])
+                # Twelve Data's /quote endpoint reports the live price under
+                # "close" (continuously updated intraday), not "price" — that
+                # key only exists on their separate /price endpoint, which
+                # lacks percent_change.
+                price = float(payload["close"])
                 change_pct = float(payload.get("percent_change", 0.0))
             except (KeyError, ValueError, TypeError) as exc:
                 logger.warning(
@@ -159,16 +181,21 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
 
         self.rate_limit_guard.acquire()
 
-        # Twelve Data uses outputsize / start_date / end_date; for simplicity, map range_ to outputsize
+        # Twelve Data uses outputsize (bar count) rather than a date range, so we
+        # size it per (interval, range) pair rather than range alone — the old
+        # code multiplied every range by a fixed 96 meant for intraday bars,
+        # which asked for e.g. 2880 *daily* bars on a "1mo" request and got a
+        # 400 from Twelve Data instead of the ~22 trading days actually needed.
         outputsize = {
-            "1d": 96,
-            "5d": 5 * 96,
-            "1mo": 30 * 96,
-        }.get(range_, 100)
+            ("1h", "1d"): 30,
+            ("1h", "5d"): 150,
+            ("1d", "1mo"): 35,
+            ("1d", "5d"): 10,
+        }.get((interval, range_), 100)
 
         params: dict[str, str] = {
             "symbol": symbol,
-            "interval": interval,
+            "interval": _to_twelvedata_interval(interval),
             "outputsize": str(outputsize),
             "apikey": self.api_key,
         }

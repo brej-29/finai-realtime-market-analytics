@@ -347,4 +347,49 @@ This document captures **architectural and design decisions** that shape the pro
 
 ---
 
+## 2026-07-13 – UI Design System (Motion, Sonner, Vaul, Radix Tooltip, Lucide)
+
+### D20: Hand-Rolled `components/ui/` Primitives over a Component Library
+
+**Options considered:**
+
+- A full component library (shadcn/ui, Chakra, Mantine)
+- Hand-rolled primitives on top of Tailwind + a few small, focused libraries
+
+**Decision:**
+
+- Build a small `components/ui/` set (`Button`, `Card`, `Badge`, `Input`, `Select`, `Skeleton`, `Tooltip`, `EmptyState`, `StatCard`, `AnimatedNumber`, `PriceDelta`) using `class-variance-authority` for variants, plus `motion` for animation, `sonner` for toasts, `vaul` for the mobile nav drawer, `@radix-ui/react-tooltip` for accessible positioning, and `lucide-react` for icons.
+
+**Rationale:**
+
+- shadcn/ui's copy-paste model still means owning the components; a hand-rolled set scoped to exactly what this app needs (7 pages, mostly cards/tables/forms) is less code to carry than importing a full library's primitive set.
+- `motion`, `sonner`, and `vaul` are all maintained by the same author (Emil Kowalski) and are small, composable, and don't impose a full design system — they add specific capabilities (animation, toasts, drawers) without dictating visual style.
+- Radix is used only where hand-rolling would sacrifice real accessibility behavior (tooltip positioning/collision) — not reached for reflexively.
+
+### D21: Custom SVG Donut Chart over Chart.js for Allocation
+
+**Decision:**
+
+- Replace the Chart.js `AllocationPie` with a hand-built animated SVG donut (`components/charts/DonutChart.tsx`) using `stroke-dasharray`/`stroke-dashoffset` per slice, animated with `motion`.
+
+**Rationale:**
+
+- A ~90-line component removes a dependency (Chart.js was only used for one pie chart at that call site; it's still used for line charts elsewhere) and gives full control over the draw-in animation and center label, which a generic chart library makes awkward.
+
+### D22: Real Twelve Data Testing Surfaced Four Independent Integration Bugs
+
+**Context:**
+
+- Once a real `TWELVE_DATA_API_KEY` was available, live testing (not just mocked unit tests) revealed the stock-quote and history pipeline was broken in several independent ways: `/quote` parsing read a nonexistent `price` field, `/time_series` was called with an invalid `interval="1d"` (Twelve Data expects `"1day"`), `outputsize` was computed from a formula that made sense only for intraday bars, and 429s were retried in a way that couldn't help and burned more of the same per-minute quota.
+
+**Decision:**
+
+- Fix all four at the provider boundary (`services/market_data/providers.py`) rather than patching call sites, and update the test mock that had (silently) encoded the same wrong assumption as the code.
+
+**Rationale:**
+
+- All four bugs were invisible to the existing unit tests because the tests' own mocked payloads matched the code's (incorrect) assumptions rather than Twelve Data's actual API. This is the concrete argument for testing against a real provider at least once before calling an integration "done" — mocks can only catch regressions against a baseline that was itself never validated.
+
+---
+
 Future decisions should be **added below with a timestamp**, never retroactively edited, to preserve historical reasoning.

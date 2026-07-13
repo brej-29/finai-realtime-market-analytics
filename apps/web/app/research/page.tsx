@@ -2,7 +2,25 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
+import { AnimatePresence, motion } from "motion/react";
+import {
+  ChevronDown,
+  ClipboardList,
+  Gauge,
+  Newspaper,
+  Sparkles,
+  TrendingUp
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { cn } from "@/lib/utils";
 
 type AssetType = "stock" | "crypto";
 
@@ -37,18 +55,98 @@ interface ResearchSummary {
   created_at: string;
 }
 
+const AGENT_META: Record<string, { icon: typeof TrendingUp; label: string }> = {
+  technical: { icon: TrendingUp, label: "Technical Analyst" },
+  sentiment: { icon: Newspaper, label: "News & Sentiment Analyst" },
+  risk: { icon: Gauge, label: "Risk Analyst" }
+};
+
 function getApiBase(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
 }
 
 const POLL_INTERVAL_MS = 3000;
 
+function AgentWorkingCard({ name, index }: { name: string; index: number }) {
+  const meta = AGENT_META[name] ?? { icon: Sparkles, label: name };
+  const Icon = meta.icon;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.08 }}
+      className="flex items-center gap-3 rounded-xl border bg-surface/60 px-3.5 py-3"
+    >
+      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand-light">
+        <motion.span
+          className="absolute inset-0 rounded-full border border-brand/40"
+          animate={{ scale: [1, 1.35], opacity: [0.6, 0] }}
+          transition={{ duration: 1.4, repeat: Infinity, delay: index * 0.2 }}
+        />
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{meta.label}</p>
+        <p className="text-[11px] text-muted">Gathering data and analyzing…</p>
+      </div>
+    </motion.div>
+  );
+}
+
+function AgentNoteCard({ section }: { section: ResearchSection }) {
+  const [open, setOpen] = useState(false);
+  const meta = AGENT_META[section.name] ?? { icon: Sparkles, label: section.title };
+  const Icon = meta.icon;
+
+  return (
+    <div className="rounded-xl border bg-surface/40">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-2 px-3.5 py-3 text-left"
+      >
+        <span className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/10 text-brand-light">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <span className="text-sm font-medium text-foreground">{section.title}</span>
+          {section.error && <Badge variant="negative">unavailable</Badge>}
+        </span>
+        <ChevronDown className={cn("h-4 w-4 text-muted transition-transform", open && "rotate-180")} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-2 border-t px-3.5 py-3">
+              {section.tool_calls.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {section.tool_calls.map((t, i) => (
+                    <Badge key={i} variant="outline">
+                      {t.tool}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted">{section.text}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function ResearchPage() {
   const [symbol, setSymbol] = useState("");
   const [assetType, setAssetType] = useState<AssetType>("stock");
   const [report, setReport] = useState<ResearchReport | null>(null);
   const [history, setHistory] = useState<ResearchSummary[]>([]);
-  const [banner, setBanner] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -78,6 +176,11 @@ export default function ResearchPage() {
         if (data.status !== "running") {
           stopPolling();
           loadHistory();
+          if (data.status === "failed") {
+            toast.error(`Research on ${data.symbol} failed: ${data.error ?? "unknown error"}`);
+          } else {
+            toast.success(`Research brief for ${data.symbol} is ready`);
+          }
         }
       } catch {
         // transient network error; keep polling
@@ -103,7 +206,6 @@ export default function ResearchPage() {
     e.preventDefault();
     const trimmed = symbol.trim().toUpperCase();
     if (!trimmed || starting) return;
-    setBanner(null);
     setStarting(true);
     try {
       const resp = await fetch(`${getApiBase()}/api/v1/research`, {
@@ -113,13 +215,14 @@ export default function ResearchPage() {
       });
       const data = await resp.json();
       if (!resp.ok) {
-        setBanner(data.message ?? "Could not start research. Please try again.");
+        toast.error(data.message ?? "Could not start research. Please try again.");
         return;
       }
       setReport(data);
+      toast(`Researching ${trimmed}…`, { description: "Three agents are gathering data in parallel." });
       startPolling(data.id);
     } catch {
-      setBanner("Could not reach the API. Please try again.");
+      toast.error("Could not reach the API. Please try again.");
     } finally {
       setStarting(false);
     }
@@ -133,165 +236,141 @@ export default function ResearchPage() {
   const isRunning = report?.status === "running";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">AI Research Desk</h1>
-        <p className="text-sm text-slate-400">
-          Three specialist agents — technical, news &amp; sentiment, and risk — research a
-          symbol in parallel using live platform data, then a lead analyst compiles the brief.
-        </p>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-5xl space-y-6">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand-light">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">AI Research Desk</h1>
+          <p className="text-sm text-muted">
+            Three specialist agents research a symbol in parallel using live platform data, then a lead
+            analyst compiles the brief.
+          </p>
+        </div>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-wrap gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm"
-      >
-        <input
-          type="text"
-          placeholder={assetType === "crypto" ? "Symbol (e.g. BTC)" : "Symbol (e.g. NVDA)"}
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          className="min-w-[140px] flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-brand-light"
-        />
-        <select
-          value={assetType}
-          onChange={(e) => setAssetType(e.target.value as AssetType)}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-brand-light"
-          aria-label="Asset type"
-        >
-          <option value="stock">Stock</option>
-          <option value="crypto">Crypto</option>
-        </select>
-        <button
-          type="submit"
-          disabled={starting || isRunning}
-          className="rounded-md bg-brand px-4 py-2 font-medium text-slate-50 hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {starting ? "Starting…" : isRunning ? "Running…" : "Run research"}
-        </button>
-      </form>
-
-      {banner && (
-        <div className="rounded-lg border border-amber-700/60 bg-amber-900/20 p-3 text-sm text-amber-200">
-          {banner}
-        </div>
-      )}
+      <Card className="p-4">
+        <form onSubmit={handleSubmit} className="flex flex-wrap gap-2.5">
+          <Input
+            type="text"
+            placeholder={assetType === "crypto" ? "Symbol (e.g. BTC)" : "Symbol (e.g. NVDA)"}
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            className="min-w-[160px] flex-1"
+          />
+          <Select value={assetType} onChange={(e) => setAssetType(e.target.value as AssetType)} aria-label="Asset type">
+            <option value="stock">Stock</option>
+            <option value="crypto">Crypto</option>
+          </Select>
+          <Button type="submit" disabled={starting || isRunning || !symbol.trim()}>
+            {starting ? "Starting…" : isRunning ? "Running…" : "Run research"}
+          </Button>
+        </form>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           {isRunning && (
-            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-300">
-              <p className="font-medium">
-                Researching {report?.symbol}… <span className="animate-pulse">●</span>
-              </p>
-              <p className="mt-2 text-xs text-slate-500">
-                The technical, sentiment, and risk analysts are gathering data in parallel.
-                This usually takes 20–60 seconds.
-              </p>
-            </div>
+            <Card className="space-y-2.5 p-4">
+              <p className="mb-1 text-sm font-medium text-foreground">Researching {report?.symbol}…</p>
+              {["technical", "sentiment", "risk"].map((name, i) => (
+                <AgentWorkingCard key={name} name={name} index={i} />
+              ))}
+            </Card>
           )}
 
           {report?.status === "failed" && (
-            <div className="rounded-lg border border-red-800/60 bg-red-900/20 p-4 text-sm text-red-200">
+            <Card className="border-negative/30 bg-negative/5 p-4 text-sm text-negative">
               Research failed: {report.error ?? "unknown error"}
-            </div>
+            </Card>
           )}
 
-          {report?.status === "completed" && report.report_markdown && (
-            <article className="rounded-lg border border-slate-800 bg-slate-900/60 p-5">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <h2 className="text-lg font-semibold">
-                  {report.symbol}{" "}
-                  <span className="rounded-full border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
-                    {report.asset_type}
-                  </span>
-                </h2>
-                <p className="text-[11px] text-slate-500">
-                  {report.model} · {report.input_tokens + report.output_tokens} tokens ·{" "}
-                  {report.completed_at &&
-                    new Date(report.completed_at).toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit"
-                    })}
-                </p>
-              </div>
-              <div className="research-markdown text-sm leading-relaxed text-slate-300">
-                <ReactMarkdown>{report.report_markdown}</ReactMarkdown>
-              </div>
-            </article>
-          )}
+          <AnimatePresence>
+            {report?.status === "completed" && report.report_markdown && (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="p-5">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                    <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+                      {report.symbol}
+                      <Badge variant="outline" className="uppercase">
+                        {report.asset_type}
+                      </Badge>
+                    </h2>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                      <Badge variant="brand">{report.model}</Badge>
+                      <span>{report.input_tokens + report.output_tokens} tokens</span>
+                      {report.completed_at && (
+                        <span>
+                          ·{" "}
+                          {new Date(report.completed_at).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="research-markdown text-sm leading-relaxed text-muted">
+                    <ReactMarkdown>{report.report_markdown}</ReactMarkdown>
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {report?.status === "completed" && report.sections && (
-            <details className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm">
-              <summary className="cursor-pointer font-medium text-slate-200">
-                Analyst working notes &amp; tool calls
-              </summary>
-              <div className="mt-3 space-y-4">
-                {report.sections.map((section) => (
-                  <div key={section.name} className="border-t border-slate-800 pt-3">
-                    <p className="font-medium text-slate-200">{section.title}</p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Tools used:{" "}
-                      {section.tool_calls.length > 0
-                        ? section.tool_calls.map((t) => t.tool).join(", ")
-                        : "none"}
-                    </p>
-                    <p className="mt-2 whitespace-pre-wrap text-xs text-slate-400">
-                      {section.text}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </details>
+            <div className="space-y-2">
+              <p className="flex items-center gap-1.5 px-1 text-xs font-medium uppercase tracking-wide text-muted">
+                <ClipboardList className="h-3.5 w-3.5" /> Analyst working notes
+              </p>
+              {report.sections.map((section) => (
+                <AgentNoteCard key={section.name} section={section} />
+              ))}
+            </div>
           )}
 
           {!report && (
-            <div className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500">
-              Run research on a symbol to see a multi-agent brief here, or open a past
-              report from the list.
-            </div>
+            <EmptyState
+              icon={<Sparkles className="h-5 w-5" />}
+              title="No research yet"
+              description="Run research on a symbol above, or open a past report from the list."
+            />
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm">
-          <h2 className="font-medium text-slate-200">Past reports</h2>
-          <div className="mt-3 space-y-1">
-            {history.length === 0 && (
-              <p className="text-xs text-slate-500">No reports yet.</p>
-            )}
+        <Card className="h-fit p-4">
+          <h2 className="mb-3 text-sm font-medium text-foreground">Past reports</h2>
+          <div className="space-y-1">
+            {history.length === 0 && <p className="text-xs text-muted">No reports yet.</p>}
             {history.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => openReport(item.id)}
-                className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-800/60 ${
-                  report?.id === item.id ? "bg-slate-800/60" : ""
-                }`}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition-colors hover:bg-surface-hover",
+                  report?.id === item.id && "bg-surface-hover"
+                )}
               >
-                <span className="font-medium text-slate-200">
+                <span className="font-medium text-foreground">
                   {item.symbol}
-                  <span className="ml-1 uppercase text-[10px] text-slate-500">
-                    {item.asset_type}
-                  </span>
+                  <span className="ml-1.5 text-[10px] uppercase text-muted">{item.asset_type}</span>
                 </span>
-                <span
-                  className={
-                    item.status === "completed"
-                      ? "text-emerald-400"
-                      : item.status === "failed"
-                        ? "text-red-400"
-                        : "text-amber-300"
+                <Badge
+                  variant={
+                    item.status === "completed" ? "positive" : item.status === "failed" ? "negative" : "warning"
                   }
                 >
                   {item.status}
-                </span>
+                </Badge>
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
-    </div>
+    </motion.div>
   );
 }

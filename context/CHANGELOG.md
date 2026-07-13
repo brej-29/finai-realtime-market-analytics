@@ -221,3 +221,29 @@ Details of implementation are in the corresponding PR description and context do
 - **Config**
   - New env vars: `ANTHROPIC_API_KEY`, `RESEARCH_MODEL` (default `claude-haiku-4-5`), `RESEARCH_DAILY_LIMIT` (default 25). Documented in `apps/api/.env.example`.
   - `requirements.txt`: added `anthropic` and `mcp`.
+
+---
+
+## 2026-07-13 – UI redesign + real Twelve Data integration fixes
+
+**Scope:**
+
+- **Design system**
+  - New dependencies: `motion` (Framer Motion's successor), `sonner` (toasts), `vaul` (mobile nav drawer), `lucide-react` (icons, replacing emoji), `@radix-ui/react-tooltip`, `class-variance-authority`, `clsx`, `tailwind-merge`. Added `next/font` (Inter, self-hosted) and a `@/*` path alias.
+  - New `components/ui/`: `Button`, `Card`, `Badge`, `Input`, `Select`, `Skeleton`, `Tooltip`, `EmptyState`, `StatCard`, `AnimatedNumber` (spring-animated counters), `PriceDelta` (up/down arrow + colored %).
+  - New `components/charts/DonutChart.tsx`: hand-built animated SVG donut (replaces the Chart.js `AllocationPie`, now deleted) for portfolio/home allocation.
+  - New `components/layout/NavLink.tsx` (shared-layout-animation active-tab pill) and `MobileNav.tsx` (Vaul drawer for small screens — nav links were previously always-visible in the header and crowded on mobile).
+  - Extended `tailwind.config.ts` with a CSS-variable-backed color system (`background`, `surface`, `border`, `positive`/`negative`/`warning`, etc.), soft/elevated/glow shadows, and shimmer/pop-in keyframes.
+
+- **Every page redesigned** (Home, Watchlist, Symbol detail, Portfolio, Alerts, Analytics, Research) on the shared design system: motion entrance/stagger animations, skeleton loading states, empty states, toast feedback on mutations (add/remove watchlist item, create alert, export PDF, research run), and icons throughout instead of emoji/plain text.
+  - Portfolio page also gained a real functional improvement: holdings now show live market value and per-position P&L (previously only symbol/qty/avg-price with no live pricing).
+  - Watchlist row add/remove now animates in/out (`AnimatePresence`) instead of an instant re-render.
+
+- **Bug fixes found by testing with a real Twelve Data key** (previously only exercised via mocks, which shared the same wrong assumptions as the code):
+  - **Quote parsing**: `TwelveDataProvider.get_quotes` read `payload["price"]`, but Twelve Data's `/quote` endpoint reports the live price under `close` — `price` only exists on their separate `/price` endpoint, which lacks `percent_change`. Every real stock quote was silently failing to parse ("Malformed Twelve Data quote") and falling back to stale/empty data.
+  - **Invalid interval string**: our internal convention passes `interval="1d"` for daily bars, but Twelve Data's `/time_series` only accepts `"1day"` — `"1d"` returned a 400 on every call. `"1h"` coincidentally matched their format, which is why hourly history worked while daily history (used by `/ai/insights` and `/analytics/*`) never did. Fixed with a small translation map at the provider boundary; the rest of the app's `"1d"`/`"1h"` convention is unchanged.
+  - **Nonsensical outputsize**: the bar-count-per-range map multiplied every range by a constant (96) meant for intraday bars, so a `"1mo"` daily-interval request asked for 2,880 *daily* bars instead of ~22 trading days. Replaced with a map keyed on `(interval, range)` pairs.
+  - **429s not actually rate-limited**: `_request_with_backoff` retried up to 3× on a 429 without re-consulting the shared token bucket, so a single logical call could fire multiple real requests against a per-minute quota. 429 is now excluded from the retry set (fails fast to the stale-cache fallback instead); retrying a per-minute quota within a ~1-2s backoff window can't help anyway.
+  - Lowered default/`.env.example` polling intervals (`PROVIDER_RATE_LIMIT_CAPACITY=8`, `WEBSOCKET_STREAM_INTERVAL_SECONDS=10`, `ALERTS_SCHEDULER_INTERVAL_SECONDS=120`) to match Twelve Data's actual free-tier cap (8 req/min, 800/day) instead of the previous, untested defaults (60 capacity, 5s/60s polling) which exceeded it once the realtime streamer, alert scheduler, and page loads ran concurrently.
+  - Frontend: `Filler` plugin was never registered with Chart.js despite `fill: true` on the Analytics and Symbol-page line charts, so area fills were silently dropped (console warning only, no visual error) — registered on both.
+  - All backend fixes are covered by the existing test suite (updated `test_providers.py` mock to match Twelve Data's real payload shape) — 32/32 backend tests, ruff, mypy, frontend typecheck/lint/vitest, and a production build all pass.

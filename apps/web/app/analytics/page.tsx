@@ -2,11 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { motion } from "motion/react";
+import { Download, Gauge, LineChart as LineChartIcon, TrendingDown } from "lucide-react";
+import { toast } from "sonner";
 import { Line } from "react-chartjs-2";
+import { Chart as ChartJS, CategoryScale, Filler, LinearScale, LineElement, PointElement, Tooltip, Legend } from "chart.js";
 
-import { Chart as ChartJS, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend } from "chart.js";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { StatCard } from "@/components/ui/StatCard";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
 interface ReturnPoint {
   ts: string;
@@ -36,10 +43,33 @@ function getApiBase(): string {
   return "http://localhost:8000";
 }
 
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      labels: { color: "rgb(148 158 171)", boxWidth: 10, boxHeight: 10 }
+    },
+    tooltip: { mode: "index" as const, intersect: false }
+  },
+  scales: {
+    x: {
+      ticks: { maxTicksLimit: 6, color: "rgb(148 158 171)" },
+      grid: { color: "rgba(255,255,255,0.04)" }
+    },
+    y: {
+      ticks: { color: "rgb(148 158 171)" },
+      grid: { color: "rgba(255,255,255,0.04)" }
+    }
+  }
+};
+
 export default function AnalyticsPage() {
   const [portfolio, setPortfolio] = useState<PortfolioAnalyticsResponse | null>(null);
   const [benchmark, setBenchmark] = useState<BenchmarkAnalyticsResponse | null>(null);
   const [benchmarkSymbol, setBenchmarkSymbol] = useState<string>("SPY");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -49,12 +79,8 @@ export default function AnalyticsPage() {
           fetch(`${apiBase}/api/v1/analytics/portfolio`),
           fetch(`${apiBase}/api/v1/analytics/benchmark?symbol=${encodeURIComponent(benchmarkSymbol)}&asset_type=stock`)
         ]);
-        if (pResp.ok) {
-          setPortfolio(await pResp.json());
-        }
-        if (bResp.ok) {
-          setBenchmark(await bResp.json());
-        }
+        if (pResp.ok) setPortfolio(await pResp.json());
+        if (bResp.ok) setBenchmark(await bResp.json());
       } catch {
         // best-effort; errors are surfaced via empty state
       }
@@ -80,18 +106,20 @@ export default function AnalyticsPage() {
         {
           label: "Portfolio",
           data: portfolioValues,
-          borderColor: "#38bdf8",
-          backgroundColor: "rgba(56,189,248,0.2)",
-          tension: 0.2
+          borderColor: "#14B8A6",
+          backgroundColor: "rgba(20,184,166,0.15)",
+          tension: 0.3,
+          fill: true
         },
         ...(benchmarkValues
           ? [
               {
                 label: benchmark?.symbol ?? "Benchmark",
                 data: benchmarkValues,
-                borderColor: "#22c55e",
-                backgroundColor: "rgba(34,197,94,0.2)",
-                tension: 0.2
+                borderColor: "#818CF8",
+                backgroundColor: "rgba(129,140,248,0.1)",
+                tension: 0.3,
+                fill: true
               }
             ]
           : [])
@@ -117,149 +145,138 @@ export default function AnalyticsPage() {
         {
           label: "Drawdown (%)",
           data: result,
-          borderColor: "#f97316",
-          backgroundColor: "rgba(249,115,22,0.2)",
-          tension: 0.2
+          borderColor: "#F97316",
+          backgroundColor: "rgba(249,115,22,0.15)",
+          tension: 0.3,
+          fill: true
         }
       ]
     };
   }, [portfolio]);
 
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const resp = await fetch(`${getApiBase()}/api/v1/reports/portfolio.pdf`, { method: "POST" });
+      if (!resp.ok) throw new Error("export failed");
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "portfolio-report.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Report downloaded");
+    } catch {
+      toast.error("Could not generate report. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
-    <div className="space-y-6">
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Analytics</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Analytics</h1>
+          <p className="text-sm text-muted">
             Portfolio-level risk metrics, performance vs benchmark, and exportable reports.
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-brand-light"
-          onClick={async () => {
-            try {
-              const apiBase = getApiBase();
-              const resp = await fetch(`${apiBase}/api/v1/reports/portfolio.pdf`, {
-                method: "POST"
-              });
-              if (!resp.ok) return;
-              const blob = await resp.blob();
-              const url = window.URL.createObjectURL(blob);
-              const link = document.createElement("a");
-              link.href = url;
-              link.download = "portfolio-report.pdf";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              window.URL.revokeObjectURL(url);
-            } catch {
-              // ignore errors for now
-            }
-          }}
-        >
-          Export PDF
-        </button>
+        <Button onClick={handleExport} disabled={exporting} size="sm">
+          <Download className="h-3.5 w-3.5" />
+          {exporting ? "Generating…" : "Export PDF"}
+        </Button>
       </header>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-          <p className="text-xs text-slate-400">Volatility</p>
-          <p className="mt-1 text-xl font-semibold text-slate-100">
-            {portfolio ? (portfolio.volatility * 100).toFixed(2) : "--"}%
-          </p>
-          <p className="mt-2 text-[11px] text-slate-500">
-            Standard deviation of portfolio returns over the sampled window (not annualised).
-          </p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-          <p className="text-xs text-slate-400">Max drawdown</p>
-          <p className="mt-1 text-xl font-semibold text-slate-100">
-            {portfolio ? (portfolio.max_drawdown * 100).toFixed(2) : "--"}%
-          </p>
-          <p className="mt-2 text-[11px] text-slate-500">
-            Largest peak-to-trough decline in portfolio value during the sampled window.
-          </p>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-          <p className="text-xs text-slate-400">Sharpe ratio (rf=0)</p>
-          <p className="mt-1 text-xl font-semibold text-slate-100">
-            {portfolio && portfolio.sharpe_ratio != null ? portfolio.sharpe_ratio.toFixed(2) : "--"}
-          </p>
-          <p className="mt-2 text-[11px] text-slate-500">
-            Mean return divided by volatility, using a risk-free rate of 0 for simplicity.
-          </p>
-        </div>
+        <StatCard
+          label="Volatility"
+          value={(portfolio?.volatility ?? 0) * 100}
+          formatter={(v) => `${v.toFixed(2)}%`}
+          icon={<LineChartIcon className="h-4 w-4" />}
+          helper="Std. deviation of returns over the sampled window (not annualised)."
+        />
+        <StatCard
+          label="Max Drawdown"
+          value={(portfolio?.max_drawdown ?? 0) * 100}
+          formatter={(v) => `${v.toFixed(2)}%`}
+          icon={<TrendingDown className="h-4 w-4" />}
+          tone={portfolio && portfolio.max_drawdown < 0 ? "negative" : "neutral"}
+          helper="Largest peak-to-trough decline in portfolio value."
+        />
+        <StatCard
+          label="Sharpe Ratio (rf=0)"
+          value={portfolio?.sharpe_ratio ?? 0}
+          formatter={(v) => (portfolio?.sharpe_ratio != null ? v.toFixed(2) : "—")}
+          icon={<Gauge className="h-4 w-4" />}
+          helper="Mean return divided by volatility, risk-free rate of 0."
+        />
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="md:col-span-2 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Portfolio vs benchmark
-            </p>
-            <div className="flex items-center gap-2 text-xs text-slate-300">
-              <span>Benchmark:</span>
-              <input
-                className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                value={benchmarkSymbol}
-                onChange={(e) => setBenchmarkSymbol(e.target.value.toUpperCase())}
-              />
+        <Card className="md:col-span-2">
+          <CardContent className="pt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Portfolio vs benchmark
+              </p>
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <span>Benchmark:</span>
+                <Input
+                  value={benchmarkSymbol}
+                  onChange={(e) => setBenchmarkSymbol(e.target.value.toUpperCase())}
+                  className="h-8 w-20 text-xs"
+                />
+              </div>
             </div>
-          </div>
-          {performanceChartData ? (
-            <Line
-              data={performanceChartData}
-              options={{
-                responsive: true,
-                plugins: {
-                  legend: { display: true },
-                  tooltip: { mode: "index", intersect: false }
-                },
-                scales: {
-                  x: { ticks: { maxTicksLimit: 6 } }
-                }
-              }}
-            />
-          ) : (
-            <p className="text-xs text-slate-500">
-              No portfolio data yet. Add holdings to see performance vs benchmark.
-            </p>
-          )}
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Drawdown
-          </p>
-          {drawdownSeries ? (
-            <Line
-              data={drawdownSeries}
-              options={{
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                  y: {
-                    ticks: {
-                      callback: (value) => `${value}%`
+            <div className="h-64">
+              {performanceChartData ? (
+                <Line data={performanceChartData} options={chartOptions} />
+              ) : (
+                <p className="text-xs text-muted">
+                  No portfolio data yet. Add holdings to see performance vs benchmark.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Drawdown</p>
+            <div className="h-64">
+              {drawdownSeries ? (
+                <Line
+                  data={drawdownSeries}
+                  options={{
+                    ...chartOptions,
+                    plugins: { ...chartOptions.plugins, legend: { display: false } },
+                    scales: {
+                      ...chartOptions.scales,
+                      y: { ...chartOptions.scales.y, ticks: { callback: (v) => `${v}%`, color: "rgb(148 158 171)" } }
                     }
-                  }
-                }
-              }}
-            />
-          ) : (
-            <p className="text-xs text-slate-500">
-              Drawdown will appear once there is enough history for your holdings.
-            </p>
-          )}
-        </div>
+                  }}
+                />
+              ) : (
+                <p className="text-xs text-muted">
+                  Drawdown will appear once there is enough history for your holdings.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-        <p className="text-[11px] text-slate-500">
-          All analytics shown here are derived from historical data and are provided for educational
-          purposes only. They do not constitute investment advice or recommendations.
-        </p>
-      </section>
-    </div>
+      <Card>
+        <CardContent className="py-3.5">
+          <p className="text-[11px] text-muted">
+            All analytics shown here are derived from historical data and are provided for educational
+            purposes only. They do not constitute investment advice or recommendations.
+          </p>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

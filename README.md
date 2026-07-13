@@ -60,7 +60,7 @@ A production-style, full-stack **real-time market analytics platform**: live sto
                                          see Architecture below)
 ```
 
-**Stack:** FastAPI · SQLAlchemy + Alembic · APScheduler · scikit-learn · Anthropic Claude SDK · MCP (Model Context Protocol) · Next.js 14 (App Router) · TypeScript · Tailwind · Zustand · lightweight-charts · Chart.js · GitHub Actions CI
+**Stack:** FastAPI · SQLAlchemy + Alembic · APScheduler · scikit-learn · Anthropic Claude SDK · MCP (Model Context Protocol) · Next.js 14 (App Router) · TypeScript · Tailwind · Zustand · Motion · Radix UI · lightweight-charts · Chart.js · GitHub Actions CI
 
 ## AI Research Desk — how it works
 

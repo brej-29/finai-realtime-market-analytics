@@ -43,7 +43,8 @@ async def test_twelvedata_provider_parses_quote(monkeypatch: pytest.MonkeyPatch)
     response_payload = {
         "AAPL": {
             "symbol": "AAPL",
-            "price": "150.0",
+            # Twelve Data's real /quote payload reports live price under "close".
+            "close": "150.0",
             "percent_change": "1.5",
         }
     }

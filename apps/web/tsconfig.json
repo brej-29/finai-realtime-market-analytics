@@ -24,6 +24,10 @@
       "@testing-library/jest-dom"
     ],
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "plugins": [
       {
         "name": "next"
