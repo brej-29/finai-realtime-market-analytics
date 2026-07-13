@@ -151,11 +151,13 @@ class ResearchReport(Base):
         nullable=False,
     )
     model: Mapped[str] = mapped_column(String(length=100), nullable=False)
+    provider: Mapped[str] = mapped_column(String(length=20), default="anthropic", nullable=False)
     report_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
     sections: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

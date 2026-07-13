@@ -19,11 +19,13 @@ class ResearchReportRead(BaseModel):
     asset_type: AssetType
     status: ResearchStatus
     model: str
+    provider: str
     report_markdown: Optional[str] = None
     sections: Optional[list[dict[str, Any]]] = None
     error: Optional[str] = None
     input_tokens: int
     output_tokens: int
+    estimated_cost_usd: float
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -39,8 +41,19 @@ class ResearchReportSummary(BaseModel):
     asset_type: AssetType
     status: ResearchStatus
     model: str
+    provider: str
+    estimated_cost_usd: float
     created_at: datetime
     completed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class ResearchBudget(BaseModel):
+    """Today's Anthropic research spend vs. the configured daily cap."""
+
+    spent_usd: float
+    budget_usd: float
+    remaining_usd: float
+    next_run_provider: str  # "anthropic" | "groq" | "disabled"

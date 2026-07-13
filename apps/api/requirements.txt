@@ -20,6 +20,7 @@ vaderSentiment>=3.3.2
 # AI research agents + MCP server (Phase 2)
 anthropic>=0.50.0
 mcp>=1.2.0
+groq>=0.13.0
 
 numpy>=1.26.0
 pandas>=2.2.0

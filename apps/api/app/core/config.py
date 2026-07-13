@@ -125,7 +125,7 @@ class AppSettings(BaseSettings):
     anthropic_api_key: str | None = Field(
         default=None,
         alias="ANTHROPIC_API_KEY",
-        description="API key for the Claude API. Research endpoints are disabled when unset.",
+        description="API key for the Claude API. Falls back to Groq (if configured) when unset.",
     )
     research_model: str = Field(
         default="claude-haiku-4-5",
@@ -135,14 +135,48 @@ class AppSettings(BaseSettings):
             "around a cent; set claude-sonnet-5 for higher-quality synthesis."
         ),
     )
+    groq_api_key: str | None = Field(
+        default=None,
+        alias="GROQ_API_KEY",
+        description=(
+            "API key for Groq. Used automatically once today's Anthropic spend "
+            "hits RESEARCH_DAILY_BUDGET_USD, or as the sole provider if "
+            "ANTHROPIC_API_KEY is unset. Research endpoints are disabled if "
+            "neither key is configured."
+        ),
+    )
+    groq_research_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        alias="GROQ_RESEARCH_MODEL",
+        description="Groq model used for fallback research runs.",
+    )
+    research_daily_budget_usd: float = Field(
+        default=0.20,
+        alias="RESEARCH_DAILY_BUDGET_USD",
+        description=(
+            "Max Anthropic spend per UTC day (estimated from actual token usage). "
+            "Once hit, new runs use the Groq fallback instead of Anthropic; if Groq "
+            "isn't configured either, the endpoint returns 429 for the rest of the day."
+        ),
+    )
     research_max_agent_iterations: int = Field(
-        default=6,
-        description="Max tool-use round trips per analyst agent.",
+        default=3,
+        description=(
+            "Max tool-use round trips per analyst agent — a backstop, not the "
+            "primary limiter (each agent's system prompt asks for at most 2 tool "
+            "calls). Kept low because cost scales with the whole growing "
+            "conversation being resent on every turn, not just the new call."
+        ),
     )
     research_daily_limit: int = Field(
-        default=25,
+        default=50,
         alias="RESEARCH_DAILY_LIMIT",
-        description="Max research runs per UTC day (cost guard for public demos).",
+        description=(
+            "Max research runs per UTC day across all providers — a coarse "
+            "anti-abuse ceiling independent of cost. RESEARCH_DAILY_BUDGET_USD is "
+            "the real cost control; this just bounds run count in case cost "
+            "estimation is ever wrong."
+        ),
     )
 
     # Demo data

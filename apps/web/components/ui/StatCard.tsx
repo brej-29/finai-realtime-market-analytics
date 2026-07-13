@@ -26,7 +26,7 @@ const toneClasses: Record<NonNullable<Props["tone"]>, string> = {
 
 export function StatCard({ label, value, formatter, icon, helper, tone = "neutral", loading }: Props) {
   return (
-    <Card className="group relative overflow-hidden p-4 transition-colors hover:border-border-hover/20 sm:p-5">
+    <Card spotlight className="group relative overflow-hidden p-4 transition-colors hover:border-border-hover/20 sm:p-5">
       <div className="flex items-start justify-between">
         <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
         {icon && (

@@ -247,3 +247,31 @@ Details of implementation are in the corresponding PR description and context do
   - Lowered default/`.env.example` polling intervals (`PROVIDER_RATE_LIMIT_CAPACITY=8`, `WEBSOCKET_STREAM_INTERVAL_SECONDS=10`, `ALERTS_SCHEDULER_INTERVAL_SECONDS=120`) to match Twelve Data's actual free-tier cap (8 req/min, 800/day) instead of the previous, untested defaults (60 capacity, 5s/60s polling) which exceeded it once the realtime streamer, alert scheduler, and page loads ran concurrently.
   - Frontend: `Filler` plugin was never registered with Chart.js despite `fill: true` on the Analytics and Symbol-page line charts, so area fills were silently dropped (console warning only, no visual error) — registered on both.
   - All backend fixes are covered by the existing test suite (updated `test_providers.py` mock to match Twelve Data's real payload shape) — 32/32 backend tests, ruff, mypy, frontend typecheck/lint/vitest, and a production build all pass.
+
+---
+
+## 2026-07-13 – Groq fallback, cost-capped research budget, and design system v2
+
+**Scope:**
+
+- **Groq fallback provider for AI research**
+  - New `app/services/research/pricing.py`: a small USD pricing table per model plus `estimate_cost_usd(model, input_tokens, output_tokens)`, used both to enforce the daily budget and to display cost transparently.
+  - New `app/services/research/llm.py`: `GroqResearchClient`, a duck-typed adapter translating between Anthropic's Messages API shape (`system`/`tools`/`messages`, response `.content` blocks, `.stop_reason`, `.usage`) and Groq's OpenAI-compatible `chat.completions.create`. `agents.py`'s orchestration logic required zero changes — both clients satisfy the same `client.messages.create(...)` interface.
+  - `research_reports` gained `provider` and `estimated_cost_usd` columns (Alembic `0004_research_provider_cost`).
+  - Provider selection is cost-based, not just count-based: while today's estimated Anthropic spend is under `RESEARCH_DAILY_BUDGET_USD` (default `$0.20`), new runs use Anthropic (`claude-haiku-4-5`); once exhausted, they automatically use Groq (`llama-3.3-70b-versatile`) instead of failing. A second safety net retries the *entire* run on Groq if Anthropic is picked but totally unreachable mid-run (e.g. an outage) — required restructuring `_execute_research` to catch exceptions from `run_research()` itself, since `synthesize()` (unlike the per-agent-isolated `run_agent()`) has no error isolation and a fully-down client raises rather than returning an all-errored outcome.
+  - New `GET /api/v1/research/budget` endpoint reports today's spend, remaining budget, and which provider the next run will use.
+  - Tuned `agents.py` for cost efficiency without sacrificing research quality: added an efficiency instruction to each agent's system prompt (call at most 2 tools, don't repeat calls), capped `max_iterations` 6→3, and reduced `max_tokens` per call (agents 1500→600, synthesis 3000→1200). Verified against the real Anthropic API: a full 3-agent research run now costs ~$0.023, comfortably fitting 8-9 runs/day inside the $0.20 budget while still producing detailed, well-cited briefs.
+  - New env vars: `GROQ_API_KEY`, `GROQ_RESEARCH_MODEL` (default `llama-3.3-70b-versatile`), `RESEARCH_DAILY_BUDGET_USD` (default `0.20`). `RESEARCH_DAILY_LIMIT` default raised 25→50 since it's now a secondary anti-abuse ceiling rather than the primary cost control.
+  - `requirements.txt`: added `groq`.
+  - Tests: 12 tests in `test_research.py` covering cost estimation, budget-exhaustion fallback to Groq, total-Anthropic-failure mid-run retry, and a detailed unit test of the Groq↔Anthropic translation layer (tool schema translation, tool-use round-trip). 37/37 backend tests, ruff, mypy all pass.
+
+- **Frontend: provider + cost transparency**
+  - `/research` page now shows a provider badge (Claude Haiku vs. Groq Llama, visually distinct) and the estimated cost alongside the token count on every completed report, plus a small animated daily-spend meter (fetches `GET /api/v1/research/budget`) showing spend vs. the $0.20 cap and which provider the next run will use.
+
+- **Design system v2: fonts, color, motion**
+  - New font pairing via `next/font`: Space Grotesk (`font-display`) for page headings, JetBrains Mono (`font-mono`) for all numeric/tabular displays — wired globally by overriding Tailwind's default `mono` family and adding a `.tabular-nums { font-family: ... }` rule, so every existing tabular-nums price/stat display picked up the mono treatment without per-file edits.
+  - New `accent` (violet) color alongside `brand` (teal), a `.text-gradient-brand` utility (brand→accent gradient text) applied to the header wordmark and home page hero heading, and a `glow-accent` shadow token.
+  - `Card` gained an opt-in `spotlight` prop: a mouse-tracked radial glow (CSS custom properties updated on `pointermove`) applied to `StatCard` and the completed research report card.
+  - New `app/template.tsx` + `components/layout/PageTransition.tsx`: a subtle fade on every route change.
+  - Primary `Button` gained a `.btn-shine` diagonal gradient sweep on hover.
+  - Verified live in the browser (font-family/gradient computed styles, spotlight CSS-variable updates on simulated pointermove, button shine class, no console errors) rather than relying on typecheck/build alone.

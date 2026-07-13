@@ -32,6 +32,16 @@ class AgentSpec:
     tools: tuple[str, ...]
 
 
+# Every agent gets the same closing instruction: this project runs on a hard
+# per-day USD budget (see research.py's provider selection), so token-frugal
+# behavior is a functional requirement, not a nicety. Two tool calls is enough
+# for every tool subset below (each agent has 2-4 narrow, purpose-built tools);
+# the max_iterations cap in run_agent is a backstop, not the primary limiter.
+_EFFICIENCY_NOTE = (
+    " Be efficient: call at most 2 tools (skip the rest if the picture is "
+    "already clear), then answer. Do not repeat a tool call you already made."
+)
+
 AGENT_SPECS: tuple[AgentSpec, ...] = (
     AgentSpec(
         name="technical",
@@ -42,8 +52,9 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             "history, technical indicators, and the platform's baseline forecast. "
             "Assess trend, momentum, and notable levels. Reference concrete numbers "
             "from tool results — never invent data. If a tool fails, work with what "
-            "you have and say so. Finish with a 3-6 sentence summary of the "
+            "you have and say so. Finish with a 3-5 sentence summary of the "
             "technical picture, including one thing that would invalidate your read."
+            + _EFFICIENCY_NOTE
         ),
         tools=("get_quote", "get_price_history", "get_technical_indicators", "get_forecast"),
     ),
@@ -56,8 +67,9 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             "symbol. Identify the dominant narrative, any catalysts, and whether "
             "coverage skews positive or negative. Quote or cite specific headlines "
             "(title + source) — never invent articles. If there is little coverage, "
-            "say so plainly rather than padding. Finish with a 3-6 sentence summary "
+            "say so plainly rather than padding. Finish with a 3-5 sentence summary "
             "of the news picture."
+            + _EFFICIENCY_NOTE
         ),
         tools=("get_quote", "get_news_sentiment"),
     ),
@@ -70,8 +82,9 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             "trading days for the requested symbol. Focus on what could go wrong "
             "for a holder: volatility regime, unusual moves, data quality gaps. "
             "Reference concrete numbers from tool results — never invent data. "
-            "Finish with a 3-6 sentence summary and a qualitative risk rating "
+            "Finish with a 3-5 sentence summary and a qualitative risk rating "
             "(low / moderate / elevated / high) with justification."
+            + _EFFICIENCY_NOTE
         ),
         tools=("get_quote", "get_price_history", "get_anomalies"),
     ),
@@ -123,7 +136,7 @@ async def run_agent(
     symbol: str,
     toolbox: ResearchToolbox,
     usage: Usage,
-    max_iterations: int = 6,
+    max_iterations: int = 3,
 ) -> AgentResult:
     """Run one analyst's tool-use loop until it stops calling tools."""
     tools = [TOOL_DEFINITIONS[name] for name in spec.tools]
@@ -142,7 +155,7 @@ async def run_agent(
         for _ in range(max_iterations):
             response = await client.messages.create(
                 model=model,
-                max_tokens=1500,
+                max_tokens=600,
                 system=spec.system,
                 tools=tools,
                 messages=messages,
@@ -182,7 +195,7 @@ async def run_agent(
         )
         response = await client.messages.create(
             model=model,
-            max_tokens=1500,
+            max_tokens=600,
             system=spec.system,
             messages=messages,
         )
@@ -225,7 +238,7 @@ async def synthesize(
     )
     response = await client.messages.create(
         model=model,
-        max_tokens=3000,
+        max_tokens=1200,
         system=SYNTHESIS_SYSTEM,
         messages=[
             {
@@ -246,7 +259,7 @@ async def run_research(
     model: str,
     symbol: str,
     toolbox: ResearchToolbox,
-    max_iterations: int = 6,
+    max_iterations: int = 3,
 ) -> ResearchOutcome:
     """Run all analysts in parallel, then synthesize their findings."""
     usage = Usage()

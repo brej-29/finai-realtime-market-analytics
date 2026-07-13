@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Generator, Iterable
 from datetime import datetime, timezone
@@ -150,6 +151,127 @@ async def test_agent_failure_does_not_sink_the_run() -> None:
     assert "unavailable" in result.text
 
 
+def test_estimate_cost_usd_uses_model_pricing() -> None:
+    from app.services.research.pricing import estimate_cost_usd
+
+    # Haiku: $1.00/$5.00 per 1M tokens.
+    cost = estimate_cost_usd("claude-haiku-4-5", input_tokens=10_000, output_tokens=2_000)
+    assert cost == pytest.approx(0.01 + 0.01)
+
+    # Unknown model falls back to Haiku-tier pricing rather than $0, so it
+    # can't silently defeat the daily budget check.
+    unknown_cost = estimate_cost_usd("some-new-model", input_tokens=10_000, output_tokens=2_000)
+    assert unknown_cost == pytest.approx(cost)
+
+    groq_cost = estimate_cost_usd("llama-3.3-70b-versatile", input_tokens=10_000, output_tokens=2_000)
+    assert groq_cost < cost  # Groq is meaningfully cheaper
+
+
+async def test_groq_messages_translates_tools_and_round_trips_tool_use() -> None:
+    """Exercise the Anthropic<->OpenAI translation in isolation, without
+    constructing a real AsyncGroq client."""
+    from app.services.research.llm import NormalizedBlock, _GroqMessages
+
+    captured_requests: list[dict[str, Any]] = []
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self._call_count = 0
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            captured_requests.append(kwargs)
+            self._call_count += 1
+            usage = SimpleNamespace(prompt_tokens=42, completion_tokens=7)
+            if self._call_count == 1:
+                tool_call = SimpleNamespace(
+                    id="call_abc",
+                    function=SimpleNamespace(name="get_quote", arguments='{"symbol": "AAPL"}'),
+                )
+                message = SimpleNamespace(content=None, tool_calls=[tool_call])
+            else:
+                message = SimpleNamespace(content="Final answer.", tool_calls=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions())
+    )
+    adapter = _GroqMessages(fake_client)
+
+    tools = [
+        {
+            "name": "get_quote",
+            "description": "Get the latest price.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"symbol": {"type": "string"}},
+                "required": ["symbol"],
+            },
+        }
+    ]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "Analyze AAPL."}]
+
+    first = await adapter.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=600,
+        system="You are a technical analyst.",
+        tools=tools,
+        messages=messages,
+    )
+
+    # Tool schema translated to OpenAI's {"type": "function", "function": {...}} shape.
+    sent_tools = captured_requests[0]["tools"]
+    assert sent_tools[0]["type"] == "function"
+    assert sent_tools[0]["function"]["name"] == "get_quote"
+    assert sent_tools[0]["function"]["parameters"] == tools[0]["input_schema"]
+    # System prompt becomes a leading {"role": "system", ...} message.
+    assert captured_requests[0]["messages"][0] == {
+        "role": "system",
+        "content": "You are a technical analyst.",
+    }
+
+    assert first.stop_reason == "tool_use"
+    assert first.content == [
+        NormalizedBlock(type="tool_use", id="call_abc", name="get_quote", input={"symbol": "AAPL"})
+    ]
+    assert first.usage.input_tokens == 42
+    assert first.usage.output_tokens == 7
+
+    # Round-trip: append the assistant turn + a tool_result, exactly as run_agent does.
+    messages.append({"role": "assistant", "content": first.content})
+    messages.append(
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "call_abc", "content": '{"price": 150.0}'}
+            ],
+        }
+    )
+
+    second = await adapter.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=600,
+        system="You are a technical analyst.",
+        tools=tools,
+        messages=messages,
+    )
+
+    sent_messages = captured_requests[1]["messages"]
+    # system, original user turn, assistant tool-call turn, tool result.
+    assert sent_messages[2]["role"] == "assistant"
+    assert sent_messages[2]["tool_calls"][0]["function"]["name"] == "get_quote"
+    assert json.loads(sent_messages[2]["tool_calls"][0]["function"]["arguments"]) == {
+        "symbol": "AAPL"
+    }
+    assert sent_messages[3] == {
+        "role": "tool",
+        "tool_call_id": "call_abc",
+        "content": '{"price": 150.0}',
+    }
+
+    assert second.stop_reason == "end_turn"
+    assert second.content == [NormalizedBlock(type="text", text="Final answer.")]
+
+
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
     Base.metadata.drop_all(bind=engine)
@@ -158,6 +280,7 @@ def client() -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_market_data_service] = lambda: DummyMarketDataService()
     app.dependency_overrides[get_news_client] = lambda: DummyNewsClient()
     app.state.research_client = StubAnthropicClient()
+    app.state.research_groq_client = None
 
     test_client = TestClient(app)
     try:
@@ -165,6 +288,7 @@ def client() -> Generator[TestClient, None, None]:
     finally:
         app.dependency_overrides.clear()
         app.state.research_client = None
+        app.state.research_groq_client = None
         Base.metadata.drop_all(bind=engine)
 
 
@@ -197,16 +321,21 @@ def test_research_endpoint_full_flow(client: TestClient) -> None:
 
 def test_research_endpoint_disabled_without_key(client: TestClient) -> None:
     app.state.research_client = None
+    app.state.research_groq_client = None
     settings = get_settings()
-    original = settings.anthropic_api_key
+    original_anthropic = settings.anthropic_api_key
+    original_groq = settings.groq_api_key
     settings.anthropic_api_key = None
+    settings.groq_api_key = None
     try:
         resp = client.post("/api/v1/research", json={"symbol": "AAPL", "asset_type": "stock"})
         assert resp.status_code == 503
         assert resp.json()["code"] == "research_disabled"
     finally:
-        settings.anthropic_api_key = original
+        settings.anthropic_api_key = original_anthropic
+        settings.groq_api_key = original_groq
         app.state.research_client = StubAnthropicClient()
+        app.state.research_groq_client = None
 
 
 def test_research_daily_limit(client: TestClient) -> None:
@@ -226,6 +355,76 @@ def test_research_daily_limit(client: TestClient) -> None:
 def test_research_report_not_found(client: TestClient) -> None:
     resp = client.get("/api/v1/research/99999")
     assert resp.status_code == 404
+
+
+def test_research_budget_endpoint_reports_anthropic_by_default(client: TestClient) -> None:
+    resp = client.get("/api/v1/research/budget")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["spent_usd"] == 0.0
+    assert data["budget_usd"] > 0
+    assert data["next_run_provider"] == "anthropic"
+
+
+def test_research_falls_back_to_groq_when_budget_exhausted(client: TestClient) -> None:
+    """When today's Anthropic budget is already used up, a new run should use
+    Groq without ever calling the Anthropic client."""
+    settings = get_settings()
+    original_budget = settings.research_daily_budget_usd
+    groq_stub = StubAnthropicClient()  # interface is provider-agnostic
+    app.state.research_groq_client = groq_stub
+    settings.research_daily_budget_usd = 0.0  # already "exhausted" before any spend
+    try:
+        resp = client.post("/api/v1/research", json={"symbol": "AAPL", "asset_type": "stock"})
+        assert resp.status_code == 202
+        report = resp.json()
+
+        for _ in range(50):
+            resp = client.get(f"/api/v1/research/{report['id']}")
+            report = resp.json()
+            if report["status"] != "running":
+                break
+            time.sleep(0.1)
+
+        assert report["status"] == "completed"
+        assert report["provider"] == "groq"
+        assert report["model"] == settings.groq_research_model
+        assert len(groq_stub.messages.calls) > 0
+        # The Anthropic stub attached by the fixture must never have been used.
+        anthropic_stub = app.state.research_client
+        assert len(anthropic_stub.messages.calls) == 0
+    finally:
+        settings.research_daily_budget_usd = original_budget
+
+
+def test_research_retries_via_groq_on_total_anthropic_failure(client: TestClient) -> None:
+    """If every agent errors out on Anthropic (e.g. an outage), the whole run
+    should be retried on Groq rather than surfacing a failed report."""
+
+    class ExplodingMessages:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            raise RuntimeError("Anthropic is down")
+
+    app.state.research_client = SimpleNamespace(messages=ExplodingMessages())
+    groq_stub = StubAnthropicClient()
+    app.state.research_groq_client = groq_stub
+    try:
+        resp = client.post("/api/v1/research", json={"symbol": "AAPL", "asset_type": "stock"})
+        assert resp.status_code == 202
+        report = resp.json()
+
+        for _ in range(50):
+            resp = client.get(f"/api/v1/research/{report['id']}")
+            report = resp.json()
+            if report["status"] != "running":
+                break
+            time.sleep(0.1)
+
+        assert report["status"] == "completed"
+        assert report["provider"] == "groq"
+        assert len(groq_stub.messages.calls) > 0
+    finally:
+        app.state.research_client = StubAnthropicClient()
 
 
 def test_mcp_server_registers_tools() -> None:

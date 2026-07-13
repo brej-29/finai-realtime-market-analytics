@@ -6,13 +6,20 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"]
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        display: ["var(--font-space-grotesk)", "system-ui", "sans-serif"],
+        mono: ["var(--font-jetbrains-mono)", "ui-monospace", "SFMono-Regular", "monospace"]
       },
       colors: {
         brand: {
           DEFAULT: "#14B8A6",
           light: "#5EEAD4",
           dark: "#0F766E"
+        },
+        accent: {
+          DEFAULT: "#8B5CF6",
+          light: "#C4B5FD",
+          dark: "#6D28D9"
         },
         background: "rgb(var(--background) / <alpha-value>)",
         surface: "rgb(var(--surface) / <alpha-value>)",
@@ -33,7 +40,8 @@ const config: Config = {
         soft: "0 1px 2px 0 rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.04)",
         elevated:
           "0 8px 30px -8px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06)",
-        glow: "0 0 0 1px rgb(20 184 166 / 0.4), 0 0 24px -4px rgb(20 184 166 / 0.35)"
+        glow: "0 0 0 1px rgb(20 184 166 / 0.4), 0 0 24px -4px rgb(20 184 166 / 0.35)",
+        "glow-accent": "0 0 0 1px rgb(139 92 246 / 0.4), 0 0 24px -4px rgb(139 92 246 / 0.35)"
       },
       keyframes: {
         shimmer: {

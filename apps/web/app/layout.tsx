@@ -1,6 +1,6 @@
 import "@/app/globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import Link from "next/link";
 
 import { Toaster } from "sonner";
@@ -16,8 +16,11 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { NavLink } from "@/components/layout/NavLink";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { cn } from "@/lib/utils";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" });
 
 export const metadata: Metadata = {
   title: "FinAI Realtime Market Analytics",
@@ -36,7 +39,7 @@ const NAV_ITEMS = [
 export default function RootLayout(props: { children: React.ReactNode }) {
   const { children } = props;
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={cn(inter.variable, spaceGrotesk.variable, jetbrainsMono.variable)}>
       <body className="app-shell font-sans">
         <TooltipProvider>
           <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-lg">
@@ -46,7 +49,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
                   F
                 </span>
                 <div className="hidden sm:block">
-                  <p className="text-sm font-semibold leading-tight text-foreground">
+                  <p className="text-gradient-brand font-display text-sm font-semibold leading-tight">
                     FinAI Realtime Analytics
                   </p>
                   <p className="text-[11px] leading-tight text-muted">Stocks &amp; Crypto</p>

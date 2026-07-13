@@ -60,7 +60,7 @@ A production-style, full-stack **real-time market analytics platform**: live sto
                                          see Architecture below)
 ```
 
-**Stack:** FastAPI · SQLAlchemy + Alembic · APScheduler · scikit-learn · Anthropic Claude SDK · MCP (Model Context Protocol) · Next.js 14 (App Router) · TypeScript · Tailwind · Zustand · Motion · Radix UI · lightweight-charts · Chart.js · GitHub Actions CI
+**Stack:** FastAPI · SQLAlchemy + Alembic · APScheduler · scikit-learn · Anthropic Claude SDK · Groq (fallback LLM provider) · MCP (Model Context Protocol) · Next.js 14 (App Router) · TypeScript · Tailwind · Zustand · Motion · Radix UI · lightweight-charts · Chart.js · GitHub Actions CI
 
 ## AI Research Desk — how it works
 
@@ -76,7 +76,7 @@ A production-style, full-stack **real-time market analytics platform**: live sto
 
 **Why a manual tool-use loop instead of a framework:** the whole orchestrator is ~150 lines in `services/research/agents.py`, fully readable, with explicit control over per-agent iteration caps and error isolation — one analyst failing doesn't sink the run, it just reports the gap.
 
-**Cost:** defaults to `claude-haiku-4-5`; a full three-agent run costs roughly a cent. Unset `ANTHROPIC_API_KEY` and the endpoint returns `503` — everything else in the app keeps working. A `RESEARCH_DAILY_LIMIT` (default 25) caps runs per day on the public demo.
+**Cost:** defaults to `claude-haiku-4-5`; a full three-agent run costs roughly $0.02. A `RESEARCH_DAILY_BUDGET_USD` (default `$0.20`) tracks estimated Anthropic spend for the day; once it's hit, new runs automatically fall back to Groq (`llama-3.3-70b-versatile`, effectively free) instead of failing — the same fallback also kicks in mid-run if Anthropic is totally unreachable. Unset both `ANTHROPIC_API_KEY` and `GROQ_API_KEY` and the endpoint returns `503`; everything else in the app keeps working. `GET /api/v1/research/budget` reports today's spend and which provider the next run will use, both surfaced live on the Research page. `RESEARCH_DAILY_LIMIT` (default 50) is a secondary anti-abuse ceiling on top of the cost budget.
 
 ### MCP server
 
@@ -127,7 +127,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Works out of the box with SQLite and keyless CoinGecko crypto data. For live **stock** quotes, add a free [Twelve Data](https://twelvedata.com/) API key to `apps/api/.env`. For the AI Research Desk, add an `ANTHROPIC_API_KEY` — everything else works without it.
+Works out of the box with SQLite and keyless CoinGecko crypto data. For live **stock** quotes, add a free [Twelve Data](https://twelvedata.com/) API key to `apps/api/.env`. For the AI Research Desk, add an `ANTHROPIC_API_KEY` (and optionally a free `GROQ_API_KEY` as a fallback once the daily budget is spent) — everything else works without either.
 
 Detailed guides: [`context/LOCAL_RUN.md`](context/LOCAL_RUN.md) (incl. Windows scripts, docker-compose Postgres) and [`context/DEPLOY_FREE.md`](context/DEPLOY_FREE.md) (Vercel + Render + Neon walkthrough).
 
@@ -148,7 +148,7 @@ This is a portfolio project engineered for free-tier constraints; these are cons
 - **The research agents are grounded but not fact-checked.** They only call platform tools (no free-text generation of numbers), but there's no automated eval yet confirming every claim in a report traces back to a tool result — see roadmap.
 - **Free provider limits are real.** Twelve Data free tier is 8 requests/min; the app degrades to cached/stale data rather than erroring, but bursts of symbols will show gaps.
 - **WebSockets on free hosting sleep.** Render free instances idle out; the client's auto-reconnect + REST fallback masks most of it, but the first hit after idle is slow (~30s cold start).
-- **Research runs are not free.** They're cheap (~$0.01/run on Haiku) but not $0, so the public demo caps runs per day (`RESEARCH_DAILY_LIMIT`) rather than leaving the endpoint unbounded.
+- **Research runs are not free.** They're cheap (~$0.02/run on Haiku) but not $0, so a daily USD budget (`RESEARCH_DAILY_BUDGET_USD`) automatically shifts new runs to the free Groq fallback once spent, and `RESEARCH_DAILY_LIMIT` caps total runs per day as a backstop.
 
 ## Roadmap
 

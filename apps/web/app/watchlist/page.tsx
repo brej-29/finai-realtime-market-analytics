@@ -131,7 +131,7 @@ export default function WatchlistPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Watchlist</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">Watchlist</h1>
           <p className="text-sm text-muted">Track your favorite symbols and see live price updates.</p>
         </div>
         <WebSocketStatus status={status} />

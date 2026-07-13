@@ -9,7 +9,8 @@ import {
   Gauge,
   Newspaper,
   Sparkles,
-  TrendingUp
+  TrendingUp,
+  Zap
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -38,11 +39,13 @@ interface ResearchReport {
   asset_type: AssetType;
   status: "running" | "completed" | "failed";
   model: string;
+  provider: string;
   report_markdown: string | null;
   sections: ResearchSection[] | null;
   error: string | null;
   input_tokens: number;
   output_tokens: number;
+  estimated_cost_usd: number;
   created_at: string;
   completed_at: string | null;
 }
@@ -52,7 +55,16 @@ interface ResearchSummary {
   symbol: string;
   asset_type: AssetType;
   status: "running" | "completed" | "failed";
+  provider: string;
+  estimated_cost_usd: number;
   created_at: string;
+}
+
+interface ResearchBudget {
+  spent_usd: number;
+  budget_usd: number;
+  remaining_usd: number;
+  next_run_provider: "anthropic" | "groq" | "disabled";
 }
 
 const AGENT_META: Record<string, { icon: typeof TrendingUp; label: string }> = {
@@ -60,6 +72,55 @@ const AGENT_META: Record<string, { icon: typeof TrendingUp; label: string }> = {
   sentiment: { icon: Newspaper, label: "News & Sentiment Analyst" },
   risk: { icon: Gauge, label: "Risk Analyst" }
 };
+
+const PROVIDER_META: Record<string, { icon: typeof Sparkles; label: string; variant: "brand" | "warning" }> = {
+  anthropic: { icon: Sparkles, label: "Claude Haiku", variant: "brand" },
+  groq: { icon: Zap, label: "Groq Llama", variant: "warning" }
+};
+
+function ProviderBadge({ provider }: { provider: string }) {
+  const meta = PROVIDER_META[provider] ?? { icon: Sparkles, label: provider, variant: "brand" as const };
+  const Icon = meta.icon;
+  return (
+    <Badge variant={meta.variant}>
+      <Icon className="h-3 w-3" />
+      {meta.label}
+    </Badge>
+  );
+}
+
+function formatCost(usd: number): string {
+  return `$${usd.toFixed(4)}`;
+}
+
+function BudgetMeter({ budget }: { budget: ResearchBudget }) {
+  const pct = budget.budget_usd > 0 ? Math.min(100, (budget.spent_usd / budget.budget_usd) * 100) : 0;
+  const nextMeta = PROVIDER_META[budget.next_run_provider];
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border bg-surface/40 px-3 py-2 text-[11px] text-muted sm:min-w-[200px]">
+      <div className="flex items-center justify-between gap-2">
+        <span>Daily Anthropic budget</span>
+        <span className="font-medium text-foreground">
+          {formatCost(budget.spent_usd)} / {formatCost(budget.budget_usd)}
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-hover">
+        <motion.div
+          className={cn("h-full rounded-full", pct >= 100 ? "bg-warning" : "bg-brand")}
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+        />
+      </div>
+      {nextMeta && (
+        <span className="flex items-center gap-1">
+          Next run via <nextMeta.icon className="h-3 w-3" /> {nextMeta.label}
+        </span>
+      )}
+      {budget.next_run_provider === "disabled" && <span>No provider configured.</span>}
+    </div>
+  );
+}
 
 function getApiBase(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
@@ -148,7 +209,17 @@ export default function ResearchPage() {
   const [report, setReport] = useState<ResearchReport | null>(null);
   const [history, setHistory] = useState<ResearchSummary[]>([]);
   const [starting, setStarting] = useState(false);
+  const [budget, setBudget] = useState<ResearchBudget | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadBudget = useCallback(async () => {
+    try {
+      const resp = await fetch(`${getApiBase()}/api/v1/research/budget`);
+      if (resp.ok) setBudget(await resp.json());
+    } catch {
+      // ignore; meter just stays hidden
+    }
+  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -176,6 +247,7 @@ export default function ResearchPage() {
         if (data.status !== "running") {
           stopPolling();
           loadHistory();
+          loadBudget();
           if (data.status === "failed") {
             toast.error(`Research on ${data.symbol} failed: ${data.error ?? "unknown error"}`);
           } else {
@@ -186,7 +258,7 @@ export default function ResearchPage() {
         // transient network error; keep polling
       }
     },
-    [loadHistory, stopPolling]
+    [loadHistory, loadBudget, stopPolling]
   );
 
   const startPolling = useCallback(
@@ -199,8 +271,9 @@ export default function ResearchPage() {
 
   useEffect(() => {
     loadHistory();
+    loadBudget();
     return stopPolling;
-  }, [loadHistory, stopPolling]);
+  }, [loadHistory, loadBudget, stopPolling]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -237,17 +310,20 @@ export default function ResearchPage() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-5xl space-y-6">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand-light">
-          <Sparkles className="h-4 w-4" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">AI Research Desk</h1>
-          <p className="text-sm text-muted">
-            Three specialist agents research a symbol in parallel using live platform data, then a lead
-            analyst compiles the brief.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand-light">
+            <Sparkles className="h-4 w-4" />
+          </span>
+          <div>
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">AI Research Desk</h1>
+            <p className="text-sm text-muted">
+              Three specialist agents research a symbol in parallel using live platform data, then a lead
+              analyst compiles the brief.
+            </p>
+          </div>
         </div>
+        {budget && <BudgetMeter budget={budget} />}
       </div>
 
       <Card className="p-4">
@@ -289,7 +365,7 @@ export default function ResearchPage() {
           <AnimatePresence>
             {report?.status === "completed" && report.report_markdown && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-                <Card className="p-5">
+                <Card spotlight className="p-5">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                     <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
                       {report.symbol}
@@ -297,9 +373,11 @@ export default function ResearchPage() {
                         {report.asset_type}
                       </Badge>
                     </h2>
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted">
-                      <Badge variant="brand">{report.model}</Badge>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                      <ProviderBadge provider={report.provider} />
+                      <Badge variant="outline">{report.model}</Badge>
                       <span>{report.input_tokens + report.output_tokens} tokens</span>
+                      <span>· {formatCost(report.estimated_cost_usd)}</span>
                       {report.completed_at && (
                         <span>
                           ·{" "}
@@ -355,9 +433,14 @@ export default function ResearchPage() {
                   report?.id === item.id && "bg-surface-hover"
                 )}
               >
-                <span className="font-medium text-foreground">
-                  {item.symbol}
-                  <span className="ml-1.5 text-[10px] uppercase text-muted">{item.asset_type}</span>
+                <span className="min-w-0">
+                  <span className="font-medium text-foreground">
+                    {item.symbol}
+                    <span className="ml-1.5 text-[10px] uppercase text-muted">{item.asset_type}</span>
+                  </span>
+                  {item.status === "completed" && (
+                    <span className="block text-[10px] text-muted">{formatCost(item.estimated_cost_usd)}</span>
+                  )}
                 </span>
                 <Badge
                   variant={
