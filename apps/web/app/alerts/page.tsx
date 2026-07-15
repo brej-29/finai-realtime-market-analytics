@@ -148,11 +148,11 @@ export default function AlertsPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-surface-hover/40 text-xs uppercase tracking-wide text-muted">
               <tr>
-                <th className="px-4 py-2.5 text-left">Symbol</th>
-                <th className="px-4 py-2.5 text-left">Type</th>
-                <th className="px-4 py-2.5 text-left">Condition</th>
-                <th className="px-4 py-2.5 text-right">Threshold</th>
-                <th className="px-4 py-2.5 text-center">Status</th>
+                <th scope="col" className="px-4 py-2.5 text-left">Symbol</th>
+                <th scope="col" className="px-4 py-2.5 text-left">Type</th>
+                <th scope="col" className="px-4 py-2.5 text-left">Condition</th>
+                <th scope="col" className="px-4 py-2.5 text-right">Threshold</th>
+                <th scope="col" className="px-4 py-2.5 text-center">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y">

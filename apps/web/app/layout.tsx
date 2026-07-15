@@ -1,5 +1,5 @@
 import "@/app/globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import Link from "next/link";
 
@@ -15,6 +15,7 @@ import {
 import { MobileNav } from "@/components/layout/MobileNav";
 import { NavLink } from "@/components/layout/NavLink";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
+import { MotionProvider } from "@/components/providers/MotionProvider";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/utils";
 
@@ -23,8 +24,28 @@ const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" });
 
 export const metadata: Metadata = {
-  title: "FinAI Realtime Market Analytics",
-  description: "Realtime stock & crypto analytics dashboard"
+  // TODO: update metadataBase once the production domain is finalized after deployment.
+  metadataBase: new URL("https://finai-analytics.example.com"),
+  title: {
+    default: "FinAI Realtime Market Analytics",
+    template: "%s · FinAI"
+  },
+  description:
+    "Realtime stock and crypto analytics dashboard with a multi-agent AI research desk for market insights.",
+  openGraph: {
+    title: "FinAI Realtime Market Analytics",
+    description:
+      "Realtime stock and crypto analytics dashboard with a multi-agent AI research desk for market insights.",
+    type: "website",
+    siteName: "FinAI Realtime Market Analytics"
+  },
+  twitter: {
+    card: "summary"
+  }
+};
+
+export const viewport: Viewport = {
+  themeColor: "#06080B"
 };
 
 const NAV_ITEMS = [
@@ -41,6 +62,13 @@ export default function RootLayout(props: { children: React.ReactNode }) {
   return (
     <html lang="en" className={cn(inter.variable, spaceGrotesk.variable, jetbrainsMono.variable)}>
       <body className="app-shell font-sans">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-slate-950"
+        >
+          Skip to content
+        </a>
+        <MotionProvider>
         <TooltipProvider>
           <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-lg">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-6">
@@ -49,7 +77,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
                   F
                 </span>
                 <div className="hidden sm:block">
-                  <p className="text-gradient-brand font-display text-sm font-semibold leading-tight">
+                  <p className="font-display text-sm font-semibold leading-tight text-foreground">
                     FinAI Realtime Analytics
                   </p>
                   <p className="text-[11px] leading-tight text-muted">Stocks &amp; Crypto</p>
@@ -93,9 +121,10 @@ export default function RootLayout(props: { children: React.ReactNode }) {
                 ))}
               </div>
             </aside>
-            <main className="app-content">{children}</main>
+            <main id="main-content" className="app-content">{children}</main>
           </div>
         </TooltipProvider>
+        </MotionProvider>
         <Toaster
           theme="dark"
           position="bottom-right"

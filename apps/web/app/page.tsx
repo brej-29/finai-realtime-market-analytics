@@ -132,7 +132,7 @@ export default function HomePage() {
     >
       <motion.div variants={item} className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-gradient-brand font-display text-2xl font-semibold tracking-tight">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
             Portfolio Overview
           </h1>
           <p className="text-sm text-muted">Real-time insights for your stock &amp; crypto holdings.</p>

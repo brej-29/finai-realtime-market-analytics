@@ -172,19 +172,19 @@ export default function WatchlistPage() {
           <table className="min-w-full divide-y text-sm">
             <thead className="bg-surface-hover/40">
               <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                <th scope="col" className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
                   Symbol
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                <th scope="col" className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
                   Type
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                <th scope="col" className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
                   Last Price
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                <th scope="col" className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
                   24h Change
                 </th>
-                <th className="px-4 py-2.5" />
+                <th scope="col" className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y">
