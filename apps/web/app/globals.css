@@ -98,6 +98,19 @@ body {
   mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, black 40%, transparent 90%);
 }
 
+/* Rotating conic-gradient ring for BrandMark (components/layout/BrandMark.tsx).
+   The wrapper has 1px padding so only a thin ring shows around the inner tile. */
+.brand-mark-ring {
+  background: conic-gradient(from 0deg, #14b8a6, #6366f1, #8b5cf6, #14b8a6);
+  animation: brand-ring-spin 8s linear infinite;
+}
+
+@keyframes brand-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Film-grain noise layer for atmospheric texture. */
 .ambient-grain {
   position: absolute;
@@ -230,6 +243,10 @@ body {
   }
 
   .ambient-blob {
+    animation: none;
+  }
+
+  .brand-mark-ring {
     animation: none;
   }
 }

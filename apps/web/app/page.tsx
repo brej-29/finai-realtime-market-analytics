@@ -16,7 +16,6 @@ import {
 
 import { WebSocketStatus } from "@/components/realtime/WebSocketStatus";
 import { useRealtimePrices } from "@/hooks/useRealtimePrices";
-import { useAppStore } from "@/store/useAppStore";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { Card, CardContent } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
@@ -78,21 +77,11 @@ const item = {
 
 export default function HomePage() {
   const { status, ticks } = useRealtimePrices({ symbols: ["AAPL", "MSFT"], assetType: "stock" });
-  const { serverStatus, setServerStatus } = useAppStore();
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
 
   useEffect(() => {
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
-
-    async function checkHealth() {
-      try {
-        const resp = await fetch(`${apiBase}/health`);
-        setServerStatus({ apiHealthy: resp.ok, lastChecked: new Date().toISOString() });
-      } catch {
-        setServerStatus({ apiHealthy: false, lastChecked: new Date().toISOString() });
-      }
-    }
 
     async function loadSummary() {
       try {
@@ -105,9 +94,8 @@ export default function HomePage() {
       }
     }
 
-    checkHealth();
     loadSummary();
-  }, [setServerStatus]);
+  }, []);
 
   const latestAapl = ticks["AAPL"];
   const hasHoldings = (summary?.total_cost_basis ?? 0) > 0;
@@ -138,16 +126,6 @@ export default function HomePage() {
           <p className="text-sm text-muted">Real-time insights for your stock &amp; crypto holdings.</p>
         </div>
         <div className="flex items-center gap-3">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
-              serverStatus.apiHealthy
-                ? "border-positive/30 bg-positive/10 text-positive"
-                : "border-negative/30 bg-negative/10 text-negative"
-            }`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {serverStatus.apiHealthy ? "API healthy" : "API unreachable"}
-          </span>
           <WebSocketStatus status={status} />
         </div>
       </motion.div>

@@ -13,8 +13,10 @@ import {
 } from "lucide-react";
 
 import { AmbientBackground } from "@/components/layout/AmbientBackground";
+import { BrandMark } from "@/components/layout/BrandMark";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { NavLink } from "@/components/layout/NavLink";
+import { TopBar } from "@/components/layout/TopBar";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { TooltipProvider } from "@/components/ui/Tooltip";
@@ -73,15 +75,11 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         <MotionProvider>
         <TooltipProvider>
           <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/[0.06] bg-surface/30 backdrop-blur-xl md:flex">
-            <Link href="/" className="flex items-center gap-2.5 px-5 py-5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-light to-brand text-sm font-bold text-slate-950 shadow-glow">
-                F
-              </span>
+            <Link href="/" className="group flex items-center gap-2.5 px-5 py-5">
+              <BrandMark id="brand-mark-sidebar" />
               <div>
-                <p className="font-display text-sm font-semibold leading-tight text-foreground">
-                  FinAI Realtime Analytics
-                </p>
-                <p className="text-[11px] leading-tight text-muted">Stocks &amp; Crypto</p>
+                <p className="font-display text-[15px] font-bold tracking-tight text-foreground">FinAI</p>
+                <p className="text-[11px] text-muted">Realtime Analytics</p>
               </div>
             </Link>
 
@@ -111,15 +109,15 @@ export default function RootLayout(props: { children: React.ReactNode }) {
           </aside>
 
           <div className="flex min-h-screen flex-col md:pl-64">
-            <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-white/[0.06] bg-background/60 px-4 backdrop-blur-xl md:justify-end md:px-8">
-              <Link href="/" className="flex items-center gap-2.5 md:hidden">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-light to-brand text-sm font-bold text-slate-950 shadow-glow">
-                  F
-                </span>
+            <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-white/[0.06] bg-background/60 px-4 backdrop-blur-xl md:px-8">
+              <Link href="/" className="group flex items-center gap-2.5 md:hidden">
+                <BrandMark id="brand-mark-mobile" />
                 <p className="font-display text-sm font-semibold leading-tight text-foreground">
                   FinAI
                 </p>
               </Link>
+
+              <TopBar />
 
               <div className="flex items-center gap-2">
                 <NotificationCenter />

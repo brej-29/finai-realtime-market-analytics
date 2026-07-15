@@ -19,8 +19,8 @@ vi.mock("../store/useAppStore", () => ({
 import HomePage from "../app/page";
 
 describe("HomePage", () => {
-  it("renders API health status", () => {
+  it("renders the portfolio overview heading", () => {
     render(<HomePage />);
-    expect(screen.getByText(/API healthy/i)).toBeInTheDocument();
+    expect(screen.getByText(/Portfolio Overview/i)).toBeInTheDocument();
   });
 });

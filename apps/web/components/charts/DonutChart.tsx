@@ -77,24 +77,32 @@ export function DonutChart({
           </span>
         </div>
       </div>
-      <div className="flex w-full flex-col gap-2">
-        {slices.map((slice) => (
-          <div key={slice.label} className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-2 text-muted">
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
+        {slices.map((slice, i) => {
+          const pct = (slice.value / total) * 100;
+          return (
+            <div key={slice.label} className="flex min-w-0 items-center gap-2.5 text-xs">
               <span
-                className="h-2.5 w-2.5 rounded-full"
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: slice.color }}
               />
-              {slice.label}
-            </span>
-            <span className="tabular-nums text-foreground">
-              {formatCurrency(slice.value)}
-              <span className="ml-1.5 text-muted">
-                {((slice.value / total) * 100).toFixed(0)}%
+              <span className="shrink-0 capitalize text-muted">{slice.label}</span>
+              <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ backgroundColor: slice.color }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pct}%` }}
+                  transition={{ duration: 0.8, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                />
+              </div>
+              <span className="shrink-0 whitespace-nowrap text-right tabular-nums text-foreground">
+                {formatCurrency(slice.value)}
+                <span className="ml-1.5 text-muted">{pct.toFixed(0)}%</span>
               </span>
-            </span>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
