@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db_session, get_market_data_service
-from app.core.errors import ProviderError
+from app.core.errors import NotFoundError, ProviderError
 from app.db.models import AssetType, Holding
-from app.schemas.portfolio import HoldingCreate, HoldingRead, PortfolioSummary, PortfolioSummaryByType
+from app.schemas.portfolio import (
+    HoldingCreate,
+    HoldingDeleteResult,
+    HoldingRead,
+    PortfolioSummary,
+    PortfolioSummaryByType,
+)
 from app.services.market_data.service import MarketDataService
 
 router = APIRouter()
@@ -38,6 +44,19 @@ def list_holdings(
 ) -> list[HoldingRead]:
     holdings = db.query(Holding).all()
     return [HoldingRead.model_validate(h) for h in holdings]
+
+
+@router.delete("/holdings/{holding_id}", response_model=HoldingDeleteResult)
+def delete_holding(
+    holding_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db_session),
+) -> HoldingDeleteResult:
+    holding = db.get(Holding, holding_id)
+    if not holding:
+        raise NotFoundError("Holding not found.", details={"holding_id": holding_id})
+    db.delete(holding)
+    db.commit()
+    return HoldingDeleteResult(success=True, deleted_holding_id=holding_id)
 
 
 @router.get("/portfolio/summary", response_model=PortfolioSummary)

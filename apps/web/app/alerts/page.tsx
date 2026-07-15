@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
-import { motion } from "motion/react";
-import { Bell, TrendingDown, TrendingUp } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { Bell, TrendingDown, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/Badge";
@@ -44,6 +44,7 @@ export default function AlertsPage() {
   const [threshold, setThreshold] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     async function loadAlerts() {
@@ -88,6 +89,25 @@ export default function AlertsPage() {
       toast.error("Could not reach the API. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(alertId: number, symbol: string) {
+    setDeletingId(alertId);
+    try {
+      const resp = await fetch(`${getApiBase()}/api/v1/alerts/${alertId}`, {
+        method: "DELETE"
+      });
+      if (resp.ok) {
+        setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+        toast(`Alert for ${symbol} deleted`);
+      } else {
+        toast.error(`Could not delete alert for ${symbol}. Please try again.`);
+      }
+    } catch {
+      toast.error("Could not reach the API. Please try again.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -153,33 +173,55 @@ export default function AlertsPage() {
                 <th scope="col" className="px-4 py-2.5 text-left">Condition</th>
                 <th scope="col" className="px-4 py-2.5 text-right">Threshold</th>
                 <th scope="col" className="px-4 py-2.5 text-center">Status</th>
+                <th scope="col" className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y">
-              {alerts.map((a) => (
-                <tr key={a.id} className="hover:bg-surface-hover/60">
-                  <td className="px-4 py-2.5 font-medium text-foreground">{a.symbol}</td>
-                  <td className="px-4 py-2.5 text-xs uppercase text-muted">{a.asset_type}</td>
-                  <td className="px-4 py-2.5 text-muted">
-                    <span className="inline-flex items-center gap-1.5">
-                      {a.direction.includes("below") ? (
-                        <TrendingDown className="h-3.5 w-3.5 text-negative" />
-                      ) : (
-                        <TrendingUp className="h-3.5 w-3.5 text-positive" />
-                      )}
-                      {DIRECTION_LABELS[a.direction] ?? a.direction}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-foreground">
-                    {formatCurrency(a.threshold)}
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <Badge variant={a.is_active ? "positive" : "default"}>
-                      {a.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
+              <AnimatePresence initial={false}>
+                {alerts.map((a) => (
+                  <motion.tr
+                    key={a.id}
+                    layout
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="group hover:bg-surface-hover/60"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-foreground">{a.symbol}</td>
+                    <td className="px-4 py-2.5 text-xs uppercase text-muted">{a.asset_type}</td>
+                    <td className="px-4 py-2.5 text-muted">
+                      <span className="inline-flex items-center gap-1.5">
+                        {a.direction.includes("below") ? (
+                          <TrendingDown className="h-3.5 w-3.5 text-negative" />
+                        ) : (
+                          <TrendingUp className="h-3.5 w-3.5 text-positive" />
+                        )}
+                        {DIRECTION_LABELS[a.direction] ?? a.direction}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-foreground">
+                      {formatCurrency(a.threshold)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <Badge variant={a.is_active ? "positive" : "default"}>
+                        {a.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(a.id, a.symbol)}
+                        disabled={deletingId === a.id}
+                        aria-label={`Delete alert for ${a.symbol}`}
+                        className="rounded-md p-1 text-muted opacity-0 transition-opacity hover:text-negative group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </motion.tr>
+                ))}
+              </AnimatePresence>
             </tbody>
           </table>
         )}

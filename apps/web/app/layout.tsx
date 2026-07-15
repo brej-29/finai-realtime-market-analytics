@@ -12,6 +12,7 @@ import {
   Wallet
 } from "lucide-react";
 
+import { AmbientBackground } from "@/components/layout/AmbientBackground";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { NavLink } from "@/components/layout/NavLink";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
@@ -61,67 +62,72 @@ export default function RootLayout(props: { children: React.ReactNode }) {
   const { children } = props;
   return (
     <html lang="en" className={cn(inter.variable, spaceGrotesk.variable, jetbrainsMono.variable)}>
-      <body className="app-shell font-sans">
+      <body className="min-h-screen font-sans">
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-slate-950"
         >
           Skip to content
         </a>
+        <AmbientBackground />
         <MotionProvider>
         <TooltipProvider>
-          <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-lg">
-            <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-6">
-              <Link href="/" className="flex items-center gap-2.5">
+          <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/[0.06] bg-surface/30 backdrop-blur-xl md:flex">
+            <Link href="/" className="flex items-center gap-2.5 px-5 py-5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-light to-brand text-sm font-bold text-slate-950 shadow-glow">
+                F
+              </span>
+              <div>
+                <p className="font-display text-sm font-semibold leading-tight text-foreground">
+                  FinAI Realtime Analytics
+                </p>
+                <p className="text-[11px] leading-tight text-muted">Stocks &amp; Crypto</p>
+              </div>
+            </Link>
+
+            <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
+              <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wide text-muted">
+                Navigation
+              </p>
+              {NAV_ITEMS.map((item) => (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  icon={item.icon}
+                  layoutId="sidebar-nav-active"
+                  variant="row"
+                />
+              ))}
+            </nav>
+
+            <div className="flex items-center gap-2 border-t border-white/[0.06] px-5 py-4">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand" />
+              </span>
+              <p className="text-[11px] text-muted">FinAI · Phase 2</p>
+            </div>
+          </aside>
+
+          <div className="flex min-h-screen flex-col md:pl-64">
+            <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-white/[0.06] bg-background/60 px-4 backdrop-blur-xl md:justify-end md:px-8">
+              <Link href="/" className="flex items-center gap-2.5 md:hidden">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-light to-brand text-sm font-bold text-slate-950 shadow-glow">
                   F
                 </span>
-                <div className="hidden sm:block">
-                  <p className="font-display text-sm font-semibold leading-tight text-foreground">
-                    FinAI Realtime Analytics
-                  </p>
-                  <p className="text-[11px] leading-tight text-muted">Stocks &amp; Crypto</p>
-                </div>
+                <p className="font-display text-sm font-semibold leading-tight text-foreground">
+                  FinAI
+                </p>
               </Link>
-
-              <nav className="hidden items-center gap-0.5 rounded-full border bg-surface/60 p-1 md:flex">
-                {NAV_ITEMS.map((item) => (
-                  <NavLink
-                    key={item.href}
-                    href={item.href}
-                    label={item.label}
-                    icon={item.icon}
-                    layoutId="desktop-nav-active"
-                  />
-                ))}
-              </nav>
 
               <div className="flex items-center gap-2">
                 <NotificationCenter />
                 <MobileNav />
               </div>
-            </div>
-          </header>
+            </header>
 
-          <div className="app-main mx-auto w-full max-w-7xl">
-            <aside className="app-sidebar hidden md:block">
-              <div className="flex h-full flex-col gap-1 px-3 py-6">
-                <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wide text-muted">
-                  Navigation
-                </p>
-                {NAV_ITEMS.map((item) => (
-                  <NavLink
-                    key={item.href}
-                    href={item.href}
-                    label={item.label}
-                    icon={item.icon}
-                    layoutId="sidebar-nav-active"
-                    variant="row"
-                  />
-                ))}
-              </div>
-            </aside>
-            <main id="main-content" className="app-content">{children}</main>
+            <main id="main-content" className="flex-1 p-5 md:p-8">{children}</main>
           </div>
         </TooltipProvider>
         </MotionProvider>

@@ -30,7 +30,9 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
         }}
         onPointerMove={handlePointerMove}
         className={cn(
-          "rounded-2xl border bg-surface/70 shadow-soft backdrop-blur-sm",
+          "relative rounded-2xl border bg-surface/50 shadow-soft backdrop-blur-md",
+          "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:rounded-t-2xl before:bg-gradient-to-r before:from-transparent before:via-white/15 before:to-transparent",
+          "border-white/[0.06]",
           spotlight && "spotlight-card",
           className
         )}

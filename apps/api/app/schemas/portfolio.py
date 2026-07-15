@@ -40,3 +40,8 @@ class PortfolioSummaryByType(BaseModel):
     market_value: float
     unrealized_pnl: float
     weight: Optional[float] = None  # percentage of total portfolio
+
+
+class HoldingDeleteResult(BaseModel):
+    success: bool
+    deleted_holding_id: Optional[int] = None

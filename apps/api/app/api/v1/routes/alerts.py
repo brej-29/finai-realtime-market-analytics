@@ -9,6 +9,7 @@ from app.core.errors import NotFoundError
 from app.db.models import Alert, AlertDirection, AlertEvent
 from app.schemas.alerts import (
     AlertCreate,
+    AlertDeleteResult,
     AlertEvaluationResult,
     AlertEventRead,
     AlertRead,
@@ -41,6 +42,19 @@ def list_alerts(
 ) -> list[AlertRead]:
     alerts = db.query(Alert).order_by(Alert.created_at.desc()).all()
     return [AlertRead.model_validate(a) for a in alerts]
+
+
+@router.delete("/{alert_id}", response_model=AlertDeleteResult)
+def delete_alert(
+    alert_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db_session),
+) -> AlertDeleteResult:
+    alert = db.get(Alert, alert_id)
+    if not alert:
+        raise NotFoundError("Alert not found.", details={"alert_id": alert_id})
+    db.delete(alert)
+    db.commit()
+    return AlertDeleteResult(success=True, deleted_alert_id=alert_id)
 
 
 @router.get("/events", response_model=list[AlertEventRead])

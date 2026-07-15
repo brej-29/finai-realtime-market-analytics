@@ -221,6 +221,62 @@ def test_holdings_and_portfolio_summary(client: TestClient) -> None:
     assert data["total_unrealized_pnl"] == pytest.approx(100.0)
 
 
+def test_holding_create_and_delete(client: TestClient) -> None:
+    resp = client.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "MSFT",
+            "asset_type": "stock",
+            "quantity": 5,
+            "average_price": 300.0,
+        },
+    )
+    assert resp.status_code == 201
+    holding_id = resp.json()["id"]
+
+    resp = client.delete(f"/api/v1/holdings/{holding_id}")
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["deleted_holding_id"] == holding_id
+
+    resp = client.get("/api/v1/holdings")
+    assert resp.status_code == 200
+    assert all(h["id"] != holding_id for h in resp.json())
+
+
+def test_holding_delete_missing_returns_404(client: TestClient) -> None:
+    resp = client.delete("/api/v1/holdings/999999")
+    assert resp.status_code == 404
+
+
+def test_alert_create_and_delete(client: TestClient) -> None:
+    resp = client.post(
+        "/api/v1/alerts",
+        json={
+            "symbol": "MSFT",
+            "asset_type": "stock",
+            "direction": "price_below",
+            "threshold": 50.0,
+        },
+    )
+    assert resp.status_code == 201
+    alert_id = resp.json()["id"]
+
+    resp = client.delete(f"/api/v1/alerts/{alert_id}")
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["deleted_alert_id"] == alert_id
+
+    resp = client.get("/api/v1/alerts")
+    assert resp.status_code == 200
+    assert all(a["id"] != alert_id for a in resp.json())
+
+
+def test_alert_delete_missing_returns_404(client: TestClient) -> None:
+    resp = client.delete("/api/v1/alerts/999999")
+    assert resp.status_code == 404
+
+
 def test_alert_create_and_evaluate(client: TestClient) -> None:
     # Create alert
     resp = client.post(

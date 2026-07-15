@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -44,3 +44,8 @@ class AlertEventRead(BaseModel):
     fired_at: datetime
     status: AlertEventStatus
     payload: dict[str, Any] | None = None
+
+
+class AlertDeleteResult(BaseModel):
+    success: bool
+    deleted_alert_id: Optional[int] = None

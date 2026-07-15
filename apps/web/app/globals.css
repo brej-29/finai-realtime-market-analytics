@@ -21,12 +21,89 @@
 
 body {
   @apply bg-background text-foreground antialiased;
-  background-image: radial-gradient(
-    ellipse 80% 50% at 50% -10%,
-    rgb(20 184 166 / 0.12),
-    transparent
-  );
-  background-attachment: fixed;
+}
+
+/* Ambient aurora blobs (see components/layout/AmbientBackground.tsx). Pure CSS
+   keyframe drift so the background can be rendered from a Server Component. */
+.ambient-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(120px);
+  will-change: transform;
+}
+
+.ambient-blob-teal {
+  top: -8%;
+  left: -6%;
+  height: 500px;
+  width: 500px;
+  background: rgb(20 184 166 / 0.18);
+  animation: aurora-drift-1 28s ease-in-out infinite alternate;
+}
+
+.ambient-blob-indigo {
+  top: 12%;
+  right: -10%;
+  height: 460px;
+  width: 460px;
+  background: rgb(99 102 241 / 0.14);
+  animation: aurora-drift-2 34s ease-in-out infinite alternate;
+  animation-delay: -6s;
+}
+
+.ambient-blob-violet {
+  bottom: -10%;
+  left: 8%;
+  height: 480px;
+  width: 480px;
+  background: rgb(139 92 246 / 0.1);
+  animation: aurora-drift-3 24s ease-in-out infinite alternate;
+  animation-delay: -12s;
+}
+
+@keyframes aurora-drift-1 {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(6%, 8%) scale(1.12);
+  }
+}
+
+@keyframes aurora-drift-2 {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(-8%, 6%) scale(1.08);
+  }
+}
+
+@keyframes aurora-drift-3 {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(5%, -6%) scale(1.1);
+  }
+}
+
+/* Faint dot-grid, masked so it fades toward the edges and bottom of the viewport. */
+.ambient-dot-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, black 40%, transparent 90%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, black 40%, transparent 90%);
+}
+
+/* Film-grain noise layer for atmospheric texture. */
+.ambient-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 ::selection {
@@ -82,22 +159,6 @@ body {
   outline: 2px solid rgb(20 184 166 / 0.6);
   outline-offset: 2px;
   border-radius: 4px;
-}
-
-.app-shell {
-  @apply min-h-screen flex flex-col;
-}
-
-.app-main {
-  @apply flex-1 flex;
-}
-
-.app-sidebar {
-  @apply w-60 border-r bg-surface/40 backdrop-blur;
-}
-
-.app-content {
-  @apply flex-1 p-5 md:p-8;
 }
 
 /* Shimmer sweep used by the Skeleton component */
@@ -166,5 +227,9 @@ body {
   .spotlight-card::before {
     opacity: 0;
     transition: none;
+  }
+
+  .ambient-blob {
+    animation: none;
   }
 }

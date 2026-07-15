@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { motion } from "motion/react";
 import { Download, Gauge, LineChart as LineChartIcon, TrendingDown } from "lucide-react";
@@ -11,7 +11,9 @@ import { Chart as ChartJS, CategoryScale, Filler, LinearScale, LineElement, Poin
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
+import { cn, formatPercent } from "@/lib/utils";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -32,6 +34,44 @@ interface BenchmarkAnalyticsResponse extends PortfolioAnalyticsResponse {
   symbol: string;
   asset_type: string;
 }
+
+type BacktestAssetType = "stock" | "crypto";
+type BacktestStrategy = "sma_cross" | "rsi_reversion";
+type BacktestRangeOption = "6mo" | "1y";
+
+interface EquityPoint {
+  date: string;
+  strategy: number;
+  buy_hold: number;
+}
+
+interface BacktestResult {
+  symbol: string;
+  asset_type: BacktestAssetType;
+  strategy: BacktestStrategy;
+  range: string;
+  bars_used: number;
+  total_return_pct: number;
+  buy_hold_return_pct: number;
+  cagr_pct: number;
+  sharpe: number;
+  max_drawdown_pct: number;
+  win_rate_pct: number | null;
+  num_trades: number;
+  equity_curve: EquityPoint[];
+}
+
+function toneForReturn(value: number): "positive" | "negative" | "neutral" {
+  if (value > 0) return "positive";
+  if (value < 0) return "negative";
+  return "neutral";
+}
+
+const metricToneClasses: Record<"neutral" | "positive" | "negative", string> = {
+  neutral: "text-foreground",
+  positive: "text-positive",
+  negative: "text-negative"
+};
 
 function getApiBase(): string {
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
@@ -70,6 +110,13 @@ export default function AnalyticsPage() {
   const [benchmark, setBenchmark] = useState<BenchmarkAnalyticsResponse | null>(null);
   const [benchmarkSymbol, setBenchmarkSymbol] = useState<string>("SPY");
   const [exporting, setExporting] = useState(false);
+
+  const [btSymbol, setBtSymbol] = useState("");
+  const [btAssetType, setBtAssetType] = useState<BacktestAssetType>("stock");
+  const [btStrategy, setBtStrategy] = useState<BacktestStrategy>("sma_cross");
+  const [btRange, setBtRange] = useState<BacktestRangeOption>("1y");
+  const [btResult, setBtResult] = useState<BacktestResult | null>(null);
+  const [btRunning, setBtRunning] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -176,8 +223,69 @@ export default function AnalyticsPage() {
     }
   }
 
+  const backtestChartData = useMemo(() => {
+    if (!btResult || !btResult.equity_curve.length) return null;
+    const labels = btResult.equity_curve.map((p) =>
+      new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    );
+    return {
+      labels,
+      datasets: [
+        {
+          label: "Strategy",
+          data: btResult.equity_curve.map((p) => p.strategy),
+          borderColor: "#14B8A6",
+          backgroundColor: "rgba(20,184,166,0.15)",
+          tension: 0.3,
+          fill: true
+        },
+        {
+          label: "Buy & Hold",
+          data: btResult.equity_curve.map((p) => p.buy_hold),
+          borderColor: "#94A3B8",
+          backgroundColor: "rgba(148,163,184,0.08)",
+          tension: 0.3,
+          fill: false
+        }
+      ]
+    };
+  }, [btResult]);
+
+  async function handleBacktest(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = btSymbol.trim().toUpperCase();
+    if (!trimmed || btRunning) return;
+    setBtRunning(true);
+    try {
+      const resp = await fetch(`${getApiBase()}/api/v1/backtest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: trimmed,
+          asset_type: btAssetType,
+          strategy: btStrategy,
+          range: btRange
+        })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        toast.error(data?.message ?? "Backtest failed. Please check the inputs and try again.");
+        return;
+      }
+      setBtResult(data);
+    } catch {
+      toast.error("Could not reach the API. Please try again.");
+    } finally {
+      setBtRunning(false);
+    }
+  }
+
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-7xl space-y-6"
+    >
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">Analytics</h1>
@@ -277,6 +385,153 @@ export default function AnalyticsPage() {
           </p>
         </CardContent>
       </Card>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Strategy Backtest</h2>
+          <p className="text-xs text-muted">
+            Simulate a rules-based strategy against buy-and-hold on historical price data.
+          </p>
+        </div>
+
+        <Card className="p-4">
+          <form onSubmit={handleBacktest} className="flex flex-wrap gap-2.5">
+            <Input
+              type="text"
+              placeholder={btAssetType === "crypto" ? "Symbol (e.g. BTC)" : "Symbol (e.g. AAPL)"}
+              value={btSymbol}
+              onChange={(e) => setBtSymbol(e.target.value)}
+              className="min-w-[160px] flex-1"
+            />
+            <Select
+              value={btAssetType}
+              onChange={(e) => setBtAssetType(e.target.value as BacktestAssetType)}
+              aria-label="Asset type"
+            >
+              <option value="stock">Stock</option>
+              <option value="crypto">Crypto</option>
+            </Select>
+            <Select
+              value={btStrategy}
+              onChange={(e) => setBtStrategy(e.target.value as BacktestStrategy)}
+              aria-label="Strategy"
+            >
+              <option value="sma_cross">SMA crossover</option>
+              <option value="rsi_reversion">RSI mean-reversion</option>
+            </Select>
+            <Select
+              value={btRange}
+              onChange={(e) => setBtRange(e.target.value as BacktestRangeOption)}
+              aria-label="Backtest range"
+            >
+              <option value="6mo">6 months</option>
+              <option value="1y">1 year</option>
+            </Select>
+            <Button type="submit" disabled={btRunning || !btSymbol.trim()}>
+              {btRunning ? "Backtesting…" : "Run backtest"}
+            </Button>
+          </form>
+        </Card>
+
+        {!btResult && !btRunning && (
+          <p className="text-xs text-muted">
+            Configure a symbol and strategy above, then run a backtest to see performance metrics and an
+            equity curve.
+          </p>
+        )}
+
+        {btResult && (
+          <>
+            <Card>
+              <CardContent className="grid grid-cols-2 gap-3 pt-5 sm:grid-cols-4">
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Total Return</p>
+                  <p
+                    className={cn(
+                      "mt-1 text-lg font-semibold tabular-nums",
+                      metricToneClasses[toneForReturn(btResult.total_return_pct)]
+                    )}
+                  >
+                    {formatPercent(btResult.total_return_pct)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Buy &amp; Hold</p>
+                  <p
+                    className={cn(
+                      "mt-1 text-lg font-semibold tabular-nums",
+                      metricToneClasses[toneForReturn(btResult.buy_hold_return_pct)]
+                    )}
+                  >
+                    {formatPercent(btResult.buy_hold_return_pct)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">CAGR</p>
+                  <p
+                    className={cn(
+                      "mt-1 text-lg font-semibold tabular-nums",
+                      metricToneClasses[toneForReturn(btResult.cagr_pct)]
+                    )}
+                  >
+                    {formatPercent(btResult.cagr_pct)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Sharpe</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {btResult.sharpe.toFixed(2)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Max Drawdown</p>
+                  <p
+                    className={cn(
+                      "mt-1 text-lg font-semibold tabular-nums",
+                      metricToneClasses[btResult.max_drawdown_pct < 0 ? "negative" : "neutral"]
+                    )}
+                  >
+                    {formatPercent(btResult.max_drawdown_pct)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Win Rate</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {btResult.win_rate_pct != null ? `${btResult.win_rate_pct.toFixed(2)}%` : "—"}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Trades</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {btResult.num_trades}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-5">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+                  Strategy vs Buy &amp; Hold (normalized to 100)
+                </p>
+                <div className="h-72">
+                  {backtestChartData && <Line data={backtestChartData} options={chartOptions} />}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="py-3.5">
+                <p className="text-[11px] text-muted">
+                  Backtest results are simulated from historical data and do not model transaction costs,
+                  slippage, taxes, or execution delays. Past performance is not indicative of future results
+                  and does not constitute investment advice.
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </section>
     </motion.div>
   );
 }

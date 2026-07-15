@@ -191,6 +191,8 @@ class TwelveDataProvider(MarketDataProvider, SupportsAssetType):
             ("1h", "5d"): 150,
             ("1d", "1mo"): 35,
             ("1d", "5d"): 10,
+            ("1d", "6mo"): 130,
+            ("1d", "1y"): 260,
         }.get((interval, range_), 100)
 
         params: dict[str, str] = {
@@ -390,6 +392,8 @@ class CoinGeckoProvider(MarketDataProvider, SupportsAssetType):
             "1d": 1,
             "5d": 5,
             "1mo": 30,
+            "6mo": 180,
+            "1y": 365,
         }.get(range_, 1)
 
         self.rate_limit_guard.acquire()
