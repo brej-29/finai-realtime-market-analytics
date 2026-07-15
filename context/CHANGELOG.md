@@ -275,3 +275,16 @@ Details of implementation are in the corresponding PR description and context do
   - New `app/template.tsx` + `components/layout/PageTransition.tsx`: a subtle fade on every route change.
   - Primary `Button` gained a `.btn-shine` diagonal gradient sweep on hover.
   - Verified live in the browser (font-family/gradient computed styles, spotlight CSS-variable updates on simulated pointermove, button shine class, no console errors) rather than relying on typecheck/build alone.
+
+---
+
+## 2026-07-13 – Design-review polish pass (reduced motion, app-shell completeness)
+
+**Scope:**
+
+- **Design corrections from a structured design review** (impeccable / frontend-design / motion-principles pass, executed via orchestrated subagents):
+  - Removed the gradient-text treatment from the header wordmark and home hero — gradient text is decorative rather than meaningful; both now render solid foreground with the display font carrying the emphasis.
+  - Removed the shine-sweep hover effect from the primary button: motion on a product surface should convey state, not decorate the most frequently used control.
+- **`prefers-reduced-motion` support (previously absent)**: a `MotionProvider` (`MotionConfig reducedMotion="user"`) now honors the OS accessibility setting for every motion/react animation app-wide, and a targeted CSS media query disables the raw keyframe effects (skeleton shimmer, spotlight glow) — no blanket animation kill.
+- **App-shell professional completeness**: styled `error.tsx` (error boundary with "Try again" reset) and `not-found.tsx` (404) pages in the design system; an SVG favicon (`app/icon.svg`, brand-teal spark mark); rich metadata (title template `%s · FinAI`, description, OpenGraph/Twitter cards, theme color — `metadataBase` is a placeholder to update at deploy time); a skip-to-content link; `scope="col"` on all 15 data-table headers.
+- Verified by a blind fresh-context reviewer against the diff (all criteria passed) plus a live browser check (404 renders, skip link present, no gradients, favicon served, zero console errors). Lint, typecheck, 4/4 vitest, and production build all pass.
