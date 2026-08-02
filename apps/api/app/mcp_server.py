@@ -108,7 +108,9 @@ async def get_portfolio_summary() -> str:
 
     db = SessionLocal()
     try:
-        holdings = db.query(Holding).all()
+        # MCP clients have no browser cookie, so they see the shared "demo"
+        # workspace rather than every visitor's holdings aggregated together.
+        holdings = db.query(Holding).filter(Holding.workspace_id == "demo").all()
     finally:
         db.close()
 

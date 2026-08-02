@@ -6,7 +6,7 @@ from typing import Dict, List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db_session, get_market_data_service
+from app.core.deps import get_db_session, get_market_data_service, get_workspace_id
 from app.db.models import AssetType, Holding
 from app.schemas.analytics import (
     BenchmarkAnalyticsResponse,
@@ -68,9 +68,12 @@ def _compute_sharpe(returns: List[float]) -> float | None:
 async def get_portfolio_analytics(
     db: Session = Depends(get_db_session),
     market_data: MarketDataService = Depends(get_market_data_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> PortfolioAnalyticsResponse:
     """Compute simple risk metrics and daily returns for the current portfolio."""
-    holdings: List[Holding] = db.query(Holding).all()
+    holdings: List[Holding] = (
+        db.query(Holding).filter(Holding.workspace_id == workspace_id).all()
+    )
     if not holdings:
         return PortfolioAnalyticsResponse(
             volatility=0.0,
