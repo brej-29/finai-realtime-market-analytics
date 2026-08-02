@@ -109,6 +109,10 @@ class AlertScheduler:
                     "ts": event.fired_at.isoformat(),
                 }
                 try:
+                    # ponytail: fans out to every connected client regardless
+                    # of workspace - fine while alert data is not sensitive,
+                    # upgrade path is per-workspace broadcast channels if it
+                    # ever holds private data.
                     await self.realtime_manager.broadcast_alert(payload)
                     event.status = AlertEventStatus.DELIVERED
                 except Exception as exc:  # pragma: no cover - best-effort logging

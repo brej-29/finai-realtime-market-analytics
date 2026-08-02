@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Generator, Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.core.deps import get_market_data_service, get_news_client
 from app.db.base import Base
-from app.db.models import AssetType
-from app.db.session import engine
+from app.db.models import AssetType, ResearchReport, ResearchStatus
+from app.db.session import SessionLocal, engine
 from app.main import app
 from app.schemas.common import HistoricalBar, Quote
 from app.schemas.news import NewsArticle, SentimentScore
@@ -317,6 +317,87 @@ def test_research_endpoint_full_flow(client: TestClient) -> None:
     resp = client.get("/api/v1/research")
     assert resp.status_code == 200
     assert any(item["id"] == report["id"] for item in resp.json())
+
+
+def _insert_backdated_report(symbol: str, days_old: float) -> int:
+    """Insert a COMPLETED report directly, bypassing the API, with a
+    created_at older than `days_old` days (naive UTC, matching storage)."""
+    db = SessionLocal()
+    try:
+        report = ResearchReport(
+            symbol=symbol,
+            asset_type=AssetType.STOCK,
+            status=ResearchStatus.COMPLETED,
+            model="stub-model",
+            provider="anthropic",
+            report_markdown="Old report",
+            input_tokens=1,
+            output_tokens=1,
+            estimated_cost_usd=0.0,
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        report_id = report.id
+        report.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+            days=days_old
+        )
+        db.commit()
+        return report_id
+    finally:
+        db.close()
+
+
+def test_research_reuses_recent_completed_report(client: TestClient) -> None:
+    """A second POST for the same symbol within the cache window returns the
+    existing report (200) instead of starting a new LLM run."""
+    resp = client.post("/api/v1/research", json={"symbol": "AAPL", "asset_type": "stock"})
+    assert resp.status_code == 202
+    report = resp.json()
+
+    for _ in range(50):
+        resp = client.get(f"/api/v1/research/{report['id']}")
+        report = resp.json()
+        if report["status"] != "running":
+            break
+        time.sleep(0.1)
+    assert report["status"] == "completed"
+
+    anthropic_stub = app.state.research_client
+    calls_before = len(anthropic_stub.messages.calls)
+
+    resp = client.post("/api/v1/research", json={"symbol": "aapl", "asset_type": "stock"})
+    assert resp.status_code == 200
+    reused = resp.json()
+    assert reused["id"] == report["id"]
+    assert len(anthropic_stub.messages.calls) == calls_before
+
+
+def test_research_does_not_reuse_expired_report(client: TestClient) -> None:
+    """A report older than the cache window is not reused; a new run starts."""
+    settings = get_settings()
+    old_id = _insert_backdated_report("AAPL", settings.research_cache_days + 1)
+
+    resp = client.post("/api/v1/research", json={"symbol": "AAPL", "asset_type": "stock"})
+    assert resp.status_code == 202
+    report = resp.json()
+    assert report["id"] != old_id
+    assert report["status"] == "running"
+
+
+def test_list_research_excludes_expired_report_but_get_still_returns_it(
+    client: TestClient,
+) -> None:
+    settings = get_settings()
+    old_id = _insert_backdated_report("MSFT", settings.research_cache_days + 1)
+
+    resp = client.get("/api/v1/research")
+    assert resp.status_code == 200
+    assert all(item["id"] != old_id for item in resp.json())
+
+    resp = client.get(f"/api/v1/research/{old_id}")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == old_id
 
 
 def test_research_endpoint_disabled_without_key(client: TestClient) -> None:

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db_session, get_market_data_service
+from app.core.deps import get_db_session, get_market_data_service, get_workspace_id
 from app.core.errors import NotFoundError
 from app.db.models import Alert, AlertDirection, AlertEvent
 from app.schemas.alerts import (
@@ -23,12 +23,14 @@ router = APIRouter()
 def create_alert(
     payload: AlertCreate,
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> AlertRead:
     alert = Alert(
         symbol=payload.symbol.upper(),
         asset_type=payload.asset_type,
         direction=payload.direction,
         threshold=payload.threshold,
+        workspace_id=workspace_id,
     )
     db.add(alert)
     db.commit()
@@ -39,8 +41,14 @@ def create_alert(
 @router.get("", response_model=list[AlertRead])
 def list_alerts(
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> list[AlertRead]:
-    alerts = db.query(Alert).order_by(Alert.created_at.desc()).all()
+    alerts = (
+        db.query(Alert)
+        .filter(Alert.workspace_id == workspace_id)
+        .order_by(Alert.created_at.desc())
+        .all()
+    )
     return [AlertRead.model_validate(a) for a in alerts]
 
 
@@ -48,9 +56,10 @@ def list_alerts(
 def delete_alert(
     alert_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> AlertDeleteResult:
     alert = db.get(Alert, alert_id)
-    if not alert:
+    if not alert or alert.workspace_id != workspace_id:
         raise NotFoundError("Alert not found.", details={"alert_id": alert_id})
     db.delete(alert)
     db.commit()
@@ -60,6 +69,7 @@ def delete_alert(
 @router.get("/events", response_model=list[AlertEventRead])
 def list_alert_events(
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
     limit: int = Query(
         50,
         ge=1,
@@ -71,6 +81,7 @@ def list_alert_events(
     query = (
         db.query(AlertEvent, Alert)
         .join(Alert, AlertEvent.alert_id == Alert.id)
+        .filter(Alert.workspace_id == workspace_id)
         .order_by(AlertEvent.fired_at.desc())
         .limit(limit)
     )
@@ -99,9 +110,10 @@ async def test_evaluate_alert(
     alert_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
     market_data: MarketDataService = Depends(get_market_data_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> AlertEvaluationResult:
     alert = db.get(Alert, alert_id)
-    if not alert:
+    if not alert or alert.workspace_id != workspace_id:
         raise NotFoundError("Alert not found.", details={"alert_id": alert_id})
 
     quotes = await market_data.get_quotes(asset_type=alert.asset_type, symbols=[alert.symbol])

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Path
 
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db_session
+from app.core.deps import get_db_session, get_workspace_id
 from app.core.errors import BadRequestError, NotFoundError
 from app.db.models import AssetType, Watchlist, WatchlistItem
 from app.schemas.watchlists import (
@@ -22,8 +22,9 @@ router = APIRouter()
 def create_watchlist(
     payload: WatchlistCreate,
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> WatchlistRead:
-    watchlist = Watchlist(name=payload.name)
+    watchlist = Watchlist(name=payload.name, workspace_id=workspace_id)
     db.add(watchlist)
     db.commit()
     db.refresh(watchlist)
@@ -33,15 +34,21 @@ def create_watchlist(
 @router.get("/default", response_model=WatchlistRead)
 def get_or_create_default_watchlist(
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> WatchlistRead:
-    """Return the shared default watchlist, creating it if it does not exist yet.
+    """Return the workspace's default watchlist, creating it if it does not exist yet.
 
-    The MVP is single-user, so the frontend works against one well-known
-    watchlist instead of tracking IDs client-side.
+    Each visitor works against one well-known watchlist within their own
+    workspace instead of tracking IDs client-side.
     """
-    watchlist = db.query(Watchlist).filter(Watchlist.name == "Default").order_by(Watchlist.id).first()
+    watchlist = (
+        db.query(Watchlist)
+        .filter(Watchlist.workspace_id == workspace_id, Watchlist.name == "Default")
+        .order_by(Watchlist.id)
+        .first()
+    )
     if not watchlist:
-        watchlist = Watchlist(name="Default")
+        watchlist = Watchlist(name="Default", workspace_id=workspace_id)
         db.add(watchlist)
         db.commit()
         db.refresh(watchlist)
@@ -61,9 +68,10 @@ def get_or_create_default_watchlist(
 def get_watchlist(
     watchlist_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> WatchlistRead:
     watchlist = db.get(Watchlist, watchlist_id)
-    if not watchlist:
+    if not watchlist or watchlist.workspace_id != workspace_id:
         raise NotFoundError("Watchlist not found.", details={"watchlist_id": watchlist_id})
     # Load items relationship
     items = [
@@ -83,9 +91,10 @@ def add_watchlist_item(
     payload: WatchlistItemCreate,
     watchlist_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> WatchlistItemRead:
     watchlist = db.get(Watchlist, watchlist_id)
-    if not watchlist:
+    if not watchlist or watchlist.workspace_id != workspace_id:
         raise NotFoundError("Watchlist not found.", details={"watchlist_id": watchlist_id})
 
     item = WatchlistItem(
@@ -112,7 +121,14 @@ def delete_watchlist_item(
     watchlist_id: int = Path(..., ge=1),
     item_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> WatchlistItemDeleteResult:
+    watchlist = db.get(Watchlist, watchlist_id)
+    if not watchlist or watchlist.workspace_id != workspace_id:
+        raise NotFoundError(
+            "Watchlist item not found.",
+            details={"watchlist_id": watchlist_id, "item_id": item_id},
+        )
     item = db.get(WatchlistItem, item_id)
     if not item or item.watchlist_id != watchlist_id:
         raise NotFoundError(

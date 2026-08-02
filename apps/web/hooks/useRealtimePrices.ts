@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { apiFetch } from "@/lib/api";
+
 export type AssetType = "stock" | "crypto";
 
 export type ConnectionStatus = "connected" | "connecting" | "disconnected";
@@ -67,23 +69,12 @@ export function useRealtimePrices(options: UseRealtimePricesOptions): UseRealtim
       return `${protocol}://${window.location.host}/ws/stream`;
     }
 
-    function getApiBase(): string {
-      if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-        return process.env.NEXT_PUBLIC_API_BASE_URL;
-      }
-      if (typeof window !== "undefined") {
-        return `${window.location.protocol}//${window.location.host}`;
-      }
-      return "http://localhost:8000";
-    }
-
     async function fetchFallback() {
       try {
-        const apiBase = getApiBase();
         const params = new URLSearchParams();
         symbolsRef.current.forEach((s) => params.append("symbols", s));
         params.set("asset_type", assetType);
-        const response = await fetch(`${apiBase}/api/v1/quotes?${params.toString()}`);
+        const response = await apiFetch(`/api/v1/quotes?${params.toString()}`);
         if (!response.ok) return;
         const data = await response.json();
         const nextTicks: Record<string, RealtimeTick> = {};

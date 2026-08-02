@@ -178,6 +178,15 @@ class AppSettings(BaseSettings):
             "estimation is ever wrong."
         ),
     )
+    research_cache_days: int = Field(
+        default=4,
+        alias="RESEARCH_CACHE_DAYS",
+        description=(
+            "Reuse window (days) for shared research reports. A completed run "
+            "for the same symbol within this window is returned to any caller "
+            "instead of paying for a new LLM run."
+        ),
+    )
 
     # Demo data
     seed_demo_data: bool = Field(

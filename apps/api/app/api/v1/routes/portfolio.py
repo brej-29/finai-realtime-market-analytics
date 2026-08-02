@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Path
 
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db_session, get_market_data_service
+from app.core.deps import get_db_session, get_market_data_service, get_workspace_id
 from app.core.errors import NotFoundError, ProviderError
 from app.db.models import AssetType, Holding
 from app.schemas.portfolio import (
@@ -25,12 +25,14 @@ router = APIRouter()
 def create_holding(
     payload: HoldingCreate,
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> HoldingRead:
     holding = Holding(
         symbol=payload.symbol.upper(),
         asset_type=payload.asset_type,
         quantity=payload.quantity,
         average_price=payload.average_price,
+        workspace_id=workspace_id,
     )
     db.add(holding)
     db.commit()
@@ -41,8 +43,9 @@ def create_holding(
 @router.get("/holdings", response_model=list[HoldingRead])
 def list_holdings(
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> list[HoldingRead]:
-    holdings = db.query(Holding).all()
+    holdings = db.query(Holding).filter(Holding.workspace_id == workspace_id).all()
     return [HoldingRead.model_validate(h) for h in holdings]
 
 
@@ -50,9 +53,10 @@ def list_holdings(
 def delete_holding(
     holding_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> HoldingDeleteResult:
     holding = db.get(Holding, holding_id)
-    if not holding:
+    if not holding or holding.workspace_id != workspace_id:
         raise NotFoundError("Holding not found.", details={"holding_id": holding_id})
     db.delete(holding)
     db.commit()
@@ -63,8 +67,9 @@ def delete_holding(
 async def get_portfolio_summary(
     db: Session = Depends(get_db_session),
     market_data: MarketDataService = Depends(get_market_data_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> PortfolioSummary:
-    holdings: list[Holding] = db.query(Holding).all()
+    holdings: list[Holding] = db.query(Holding).filter(Holding.workspace_id == workspace_id).all()
 
     if not holdings:
         return PortfolioSummary(

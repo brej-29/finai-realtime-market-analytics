@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/Input";
 import { PriceDelta } from "@/components/ui/PriceDelta";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 interface HoldingRow {
@@ -33,10 +34,6 @@ interface Quote {
 
 const SLICE_COLORS = ["#14B8A6", "#818CF8", "#F97316", "#38BDF8", "#F472B6", "#A3E635"];
 
-function getApiBase(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
-}
-
 export default function PortfolioPage() {
   const [holdings, setHoldings] = useState<HoldingRow[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -50,8 +47,7 @@ export default function PortfolioPage() {
 
   async function loadHoldings() {
     try {
-      const apiBase = getApiBase();
-      const resp = await fetch(`${apiBase}/api/v1/holdings`);
+      const resp = await apiFetch("/api/v1/holdings");
       if (!resp.ok) return;
       const data: HoldingRow[] = await resp.json();
       setHoldings(data);
@@ -65,7 +61,7 @@ export default function PortfolioPage() {
         Array.from(byType.entries()).map(async ([assetType, symbols]) => {
           const params = new URLSearchParams({ asset_type: assetType });
           symbols.forEach((s) => params.append("symbols", s));
-          const qResp = await fetch(`${apiBase}/api/v1/quotes?${params.toString()}`);
+          const qResp = await apiFetch(`/api/v1/quotes?${params.toString()}`);
           if (!qResp.ok) return;
           const qData = await qResp.json();
           for (const q of (qData.quotes ?? []) as Quote[]) {
@@ -93,7 +89,7 @@ export default function PortfolioPage() {
     if (!trimmed || !(quantity > 0) || !(averagePrice >= 0) || submitting) return;
     setSubmitting(true);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/holdings`, {
+      const resp = await apiFetch("/api/v1/holdings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -124,7 +120,7 @@ export default function PortfolioPage() {
   async function handleRemove(holdingId: number, symbol: string) {
     setRemovingId(holdingId);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/holdings/${holdingId}`, {
+      const resp = await apiFetch(`/api/v1/holdings/${holdingId}`, {
         method: "DELETE"
       });
       if (resp.ok) {

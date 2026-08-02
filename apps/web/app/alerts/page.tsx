@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 interface AlertRow {
@@ -32,10 +33,6 @@ const DIRECTION_LABELS: Record<string, string> = {
   ma_cross: "MA cross"
 };
 
-function getApiBase(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
-}
-
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [symbol, setSymbol] = useState("");
@@ -49,7 +46,7 @@ export default function AlertsPage() {
   useEffect(() => {
     async function loadAlerts() {
       try {
-        const resp = await fetch(`${getApiBase()}/api/v1/alerts`);
+        const resp = await apiFetch("/api/v1/alerts");
         if (!resp.ok) return;
         setAlerts(await resp.json());
       } catch {
@@ -66,7 +63,7 @@ export default function AlertsPage() {
     if (!symbol.trim() || !threshold || submitting) return;
     setSubmitting(true);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/alerts`, {
+      const resp = await apiFetch("/api/v1/alerts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -95,7 +92,7 @@ export default function AlertsPage() {
   async function handleDelete(alertId: number, symbol: string) {
     setDeletingId(alertId);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/alerts/${alertId}`, {
+      const resp = await apiFetch(`/api/v1/alerts/${alertId}`, {
         method: "DELETE"
       });
       if (resp.ok) {

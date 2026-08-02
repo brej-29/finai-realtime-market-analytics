@@ -51,18 +51,18 @@ DEMO_ALERTS: list[tuple[str, AssetType, AlertDirection, float]] = [
 ]
 
 
-def seed_demo_data(db: Session) -> bool:
-    """Seed demo data if the database is empty. Returns True if data was created."""
+def seed_demo_data(db: Session, workspace_id: str = "demo") -> bool:
+    """Seed demo data for a workspace if it has none. Returns True if data was created."""
     has_data = (
-        db.query(Watchlist.id).first() is not None
-        or db.query(Holding.id).first() is not None
-        or db.query(Alert.id).first() is not None
+        db.query(Watchlist.id).filter(Watchlist.workspace_id == workspace_id).first() is not None
+        or db.query(Holding.id).filter(Holding.workspace_id == workspace_id).first() is not None
+        or db.query(Alert.id).filter(Alert.workspace_id == workspace_id).first() is not None
     )
     if has_data:
-        logger.info("Demo seed skipped: database already contains data.")
+        logger.info("Demo seed skipped: workspace %s already contains data.", workspace_id)
         return False
 
-    watchlist = Watchlist(name="Default")
+    watchlist = Watchlist(name="Default", workspace_id=workspace_id)
     db.add(watchlist)
     db.flush()
 
@@ -82,6 +82,7 @@ def seed_demo_data(db: Session) -> bool:
                 asset_type=asset_type,
                 quantity=quantity,
                 average_price=average_price,
+                workspace_id=workspace_id,
             )
         )
 
@@ -93,12 +94,14 @@ def seed_demo_data(db: Session) -> bool:
                 direction=direction,
                 threshold=threshold,
                 is_active=True,
+                workspace_id=workspace_id,
             )
         )
 
     db.commit()
     logger.info(
-        "Demo seed complete: 1 watchlist, %d items, %d holdings, %d alerts.",
+        "Demo seed complete for workspace %s: 1 watchlist, %d items, %d holdings, %d alerts.",
+        workspace_id,
         len(DEMO_WATCHLIST_ITEMS),
         len(DEMO_HOLDINGS),
         len(DEMO_ALERTS),

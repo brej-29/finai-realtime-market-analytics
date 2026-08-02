@@ -28,6 +28,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { PriceDelta } from "@/components/ui/PriceDelta";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { WebSocketStatus } from "@/components/realtime/WebSocketStatus";
+import { apiFetch } from "@/lib/api";
 import { cn, formatCurrency, relativeTime } from "@/lib/utils";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, ChartTooltip, Legend);
@@ -104,16 +105,6 @@ function computeIndicators(candles: CandlePoint[]): IndicatorSeries {
   return { ma: ma ?? undefined, upperBand: upperBand ?? undefined, lowerBand: lowerBand ?? undefined };
 }
 
-function getApiBase(): string {
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.host}`;
-  }
-  return "http://localhost:8000";
-}
-
 function SymbolDetail({ params }: PageProps) {
   const [history, setHistory] = useState<HistoryBar[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -131,17 +122,17 @@ function SymbolDetail({ params }: PageProps) {
     async function loadHistoryAndInsights() {
       setLoading(true);
       try {
-        const apiBase = getApiBase();
-        const historyUrl = new URL(`${apiBase}/api/v1/history`);
-        historyUrl.searchParams.set("symbol", symbol);
-        historyUrl.searchParams.set("asset_type", assetType);
-        historyUrl.searchParams.set("interval", "1h");
-        historyUrl.searchParams.set("range", "1d");
+        const historyParams = new URLSearchParams({
+          symbol,
+          asset_type: assetType,
+          interval: "1h",
+          range: "1d"
+        });
 
         const [historyResp, newsResp, aiResp] = await Promise.all([
-          fetch(historyUrl.toString()),
-          fetch(`${apiBase}/api/v1/news?symbol=${symbol}&asset_type=${assetType}`),
-          fetch(`${apiBase}/api/v1/ai/insights?symbol=${symbol}&asset_type=${assetType}`)
+          apiFetch(`/api/v1/history?${historyParams.toString()}`),
+          apiFetch(`/api/v1/news?symbol=${symbol}&asset_type=${assetType}`),
+          apiFetch(`/api/v1/ai/insights?symbol=${symbol}&asset_type=${assetType}`)
         ]);
 
         if (historyResp.ok) {

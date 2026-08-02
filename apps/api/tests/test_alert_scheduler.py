@@ -87,6 +87,7 @@ async def test_alert_scheduler_creates_events() -> None:
             direction=AlertDirection.PRICE_ABOVE,
             threshold=95.0,
             is_active=True,
+            workspace_id="demo",
         )
         db.add(alert)
         db.commit()

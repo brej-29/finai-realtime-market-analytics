@@ -60,7 +60,9 @@ def client() -> Generator[TestClient, None, None]:
         return dummy_service  # type: ignore[return-value]
 
     app.dependency_overrides[get_market_data_service] = override_market_data_service
-    test_client = TestClient(app)
+    # base_url must be https: the workspace cookie is Secure-flagged, and
+    # httpx's cookie jar silently drops Secure cookies on http:// requests.
+    test_client = TestClient(app, base_url="https://testserver")
     try:
         yield test_client  # type: ignore[misc]
     finally:
@@ -119,29 +121,30 @@ def test_watchlists_crud(client: TestClient) -> None:
 
 
 def test_default_watchlist_get_or_create(client: TestClient) -> None:
-    # First call creates the default watchlist
+    # First call creates the default watchlist; the new workspace also
+    # auto-seeds demo data (see get_workspace_id), so items is pre-populated.
     resp = client.get("/api/v1/watchlists/default")
     assert resp.status_code == 200
     first = resp.json()
     assert first["name"] == "Default"
-    assert first["items"] == []
+    seeded_count = len(first["items"])
 
     # Second call returns the same watchlist instead of creating another
     resp = client.get("/api/v1/watchlists/default")
     assert resp.status_code == 200
     assert resp.json()["id"] == first["id"]
 
-    # Items added to it show up on subsequent fetches
+    # Items added to it show up on subsequent fetches (SOL is not part of
+    # the demo seed, so it is unambiguously the newly added item).
     resp = client.post(
         f"/api/v1/watchlists/{first['id']}/items",
-        json={"symbol": "BTC", "asset_type": "crypto"},
+        json={"symbol": "SOL", "asset_type": "crypto"},
     )
     assert resp.status_code == 201
     resp = client.get("/api/v1/watchlists/default")
     items = resp.json()["items"]
-    assert len(items) == 1
-    assert items[0]["symbol"] == "BTC"
-    assert items[0]["asset_type"] == "crypto"
+    assert len(items) == seeded_count + 1
+    assert any(i["symbol"] == "SOL" and i["asset_type"] == "crypto" for i in items)
 
 
 def test_seed_demo_data_is_idempotent(client: TestClient) -> None:
@@ -199,6 +202,10 @@ def test_alerts_create_and_list(client: TestClient) -> None:
 
 
 def test_holdings_and_portfolio_summary(client: TestClient) -> None:
+    # Baseline: the workspace auto-seeds demo holdings on its first request,
+    # so compare against a delta rather than an absolute total.
+    baseline = client.get("/api/v1/portfolio/summary").json()
+
     # Create holding
     resp = client.post(
         "/api/v1/holdings",
@@ -215,10 +222,10 @@ def test_holdings_and_portfolio_summary(client: TestClient) -> None:
     resp = client.get("/api/v1/portfolio/summary")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_cost_basis"] == pytest.approx(900.0)
+    assert data["total_cost_basis"] == pytest.approx(baseline["total_cost_basis"] + 900.0)
     # Dummy price is 100.0
-    assert data["total_market_value"] == pytest.approx(1000.0)
-    assert data["total_unrealized_pnl"] == pytest.approx(100.0)
+    assert data["total_market_value"] == pytest.approx(baseline["total_market_value"] + 1000.0)
+    assert data["total_unrealized_pnl"] == pytest.approx(baseline["total_unrealized_pnl"] + 100.0)
 
 
 def test_holding_create_and_delete(client: TestClient) -> None:
@@ -247,6 +254,53 @@ def test_holding_create_and_delete(client: TestClient) -> None:
 def test_holding_delete_missing_returns_404(client: TestClient) -> None:
     resp = client.delete("/api/v1/holdings/999999")
     assert resp.status_code == 404
+
+
+def test_holdings_isolated_between_workspaces(client: TestClient) -> None:
+    """Two visitors (separate cookie jars) only see their own holdings.
+
+    Uses symbols outside the demo-seed list (AAPL/MSFT/NVDA/BTC/ETH) since
+    each workspace auto-seeds demo data on its first request.
+    """
+    client_b = TestClient(app, base_url="https://testserver")
+
+    resp = client.post(
+        "/api/v1/holdings",
+        json={"symbol": "GOOG", "asset_type": "stock", "quantity": 1, "average_price": 100.0},
+    )
+    assert resp.status_code == 201
+
+    resp = client_b.post(
+        "/api/v1/holdings",
+        json={"symbol": "TSLA", "asset_type": "stock", "quantity": 2, "average_price": 200.0},
+    )
+    assert resp.status_code == 201
+
+    symbols_a = {h["symbol"] for h in client.get("/api/v1/holdings").json()}
+    symbols_b = {h["symbol"] for h in client_b.get("/api/v1/holdings").json()}
+
+    assert "TSLA" in symbols_b
+    assert "TSLA" not in symbols_a
+    assert "GOOG" in symbols_a
+    assert "GOOG" not in symbols_b
+
+
+def test_holding_delete_other_workspace_returns_404(client: TestClient) -> None:
+    """Deleting a holding that belongs to a different workspace 404s, not deletes."""
+    client_b = TestClient(app, base_url="https://testserver")
+
+    resp = client.post(
+        "/api/v1/holdings",
+        json={"symbol": "GOOG", "asset_type": "stock", "quantity": 1, "average_price": 100.0},
+    )
+    assert resp.status_code == 201
+    holding_id = resp.json()["id"]
+
+    resp = client_b.delete(f"/api/v1/holdings/{holding_id}")
+    assert resp.status_code == 404
+
+    resp = client.get("/api/v1/holdings")
+    assert any(h["id"] == holding_id for h in resp.json())
 
 
 def test_alert_create_and_delete(client: TestClient) -> None:

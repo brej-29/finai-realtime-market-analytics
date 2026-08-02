@@ -12,6 +12,7 @@ import {
   Wallet
 } from "lucide-react";
 
+import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // Kept local (not imported from layout.tsx) so TopBar stays decoupled from the
@@ -27,16 +28,6 @@ const PAGE_CONTEXTS: { match: (path: string) => boolean; label: string; icon: Re
   { match: (p) => p.startsWith("/symbol"), label: "Symbol detail", icon: <Activity className="h-3.5 w-3.5" /> }
 ];
 
-function getApiBase(): string {
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.host}`;
-  }
-  return "http://localhost:8000";
-}
-
 const HEALTH_POLL_INTERVAL_MS = 60_000;
 
 export function TopBar() {
@@ -45,11 +36,10 @@ export function TopBar() {
 
   useEffect(() => {
     let cancelled = false;
-    const apiBase = getApiBase();
 
     async function checkHealth() {
       try {
-        const resp = await fetch(`${apiBase}/health`);
+        const resp = await apiFetch("/health");
         if (!cancelled) setApiHealthy(resp.ok);
       } catch {
         if (!cancelled) setApiHealthy(false);

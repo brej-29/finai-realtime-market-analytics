@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ClipboardList,
   Gauge,
+  History,
   Newspaper,
   Sparkles,
   TrendingUp,
@@ -21,7 +22,8 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
+import { cn, relativeTime } from "@/lib/utils";
 
 type AssetType = "stock" | "crypto";
 
@@ -122,11 +124,18 @@ function BudgetMeter({ budget }: { budget: ResearchBudget }) {
   );
 }
 
-function getApiBase(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
-}
-
 const POLL_INTERVAL_MS = 3000;
+const SHARED_REPORT_THRESHOLD_MS = 2 * 60 * 1000;
+
+function formatSharedTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 
 function AgentWorkingCard({ name, index }: { name: string; index: number }) {
   const meta = AGENT_META[name] ?? { icon: Sparkles, label: name };
@@ -214,7 +223,7 @@ export default function ResearchPage() {
 
   const loadBudget = useCallback(async () => {
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/research/budget`);
+      const resp = await apiFetch("/api/v1/research/budget");
       if (resp.ok) setBudget(await resp.json());
     } catch {
       // ignore; meter just stays hidden
@@ -230,7 +239,7 @@ export default function ResearchPage() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/research`);
+      const resp = await apiFetch("/api/v1/research");
       if (resp.ok) setHistory(await resp.json());
     } catch {
       // ignore; history panel just stays empty
@@ -240,7 +249,7 @@ export default function ResearchPage() {
   const loadReport = useCallback(
     async (id: number) => {
       try {
-        const resp = await fetch(`${getApiBase()}/api/v1/research/${id}`);
+        const resp = await apiFetch(`/api/v1/research/${id}`);
         if (!resp.ok) return;
         const data: ResearchReport = await resp.json();
         setReport(data);
@@ -281,7 +290,7 @@ export default function ResearchPage() {
     if (!trimmed || starting) return;
     setStarting(true);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/research`, {
+      const resp = await apiFetch("/api/v1/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: trimmed, asset_type: assetType })
@@ -291,9 +300,18 @@ export default function ResearchPage() {
         toast.error(data.message ?? "Could not start research. Please try again.");
         return;
       }
-      setReport(data);
-      toast(`Researching ${trimmed}…`, { description: "Three agents are gathering data in parallel." });
-      startPolling(data.id);
+      const newReport: ResearchReport = data;
+      setReport(newReport);
+      if (newReport.status === "running") {
+        toast(`Researching ${trimmed}…`, { description: "Three agents are gathering data in parallel." });
+        startPolling(newReport.id);
+      } else {
+        toast(`Showing existing research for ${trimmed}`, {
+          description: `Generated ${newReport.completed_at ? relativeTime(newReport.completed_at) : "recently"}`
+        });
+        loadHistory();
+        loadBudget();
+      }
     } catch {
       toast.error("Could not reach the API. Please try again.");
     } finally {
@@ -307,6 +325,10 @@ export default function ResearchPage() {
   }
 
   const isRunning = report?.status === "running";
+  const isSharedReport =
+    report?.status === "completed" &&
+    !!report.completed_at &&
+    Date.now() - new Date(report.completed_at).getTime() > SHARED_REPORT_THRESHOLD_MS;
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-5xl space-y-6">
@@ -366,6 +388,17 @@ export default function ResearchPage() {
             {report?.status === "completed" && report.report_markdown && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
                 <Card spotlight className="p-5">
+                  {isSharedReport && report.completed_at && (
+                    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-xs">
+                      <History className="h-3.5 w-3.5 shrink-0 text-brand-light" />
+                      <span className="font-medium text-foreground">
+                        Shared research from {formatSharedTimestamp(report.completed_at)}
+                      </span>
+                      <span className="text-muted">
+                        Reused from the shared cache — reports are reused for 4 days to keep API costs down.
+                      </span>
+                    </div>
+                  )}
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                     <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
                       {report.symbol}

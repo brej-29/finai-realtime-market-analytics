@@ -6,17 +6,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { Bell } from "lucide-react";
 
 import { useAppStore } from "@/store/useAppStore";
+import { apiFetch } from "@/lib/api";
 import { relativeTime } from "@/lib/utils";
-
-function getApiBase(): string {
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.host}`;
-  }
-  return "http://localhost:8000";
-}
 
 export function NotificationCenter() {
   const { alertEvents, unreadAlertCount, setAlertEvents, markAllAlertsRead } = useAppStore();
@@ -26,8 +17,7 @@ export function NotificationCenter() {
   useEffect(() => {
     async function loadEvents() {
       try {
-        const apiBase = getApiBase();
-        const resp = await fetch(`${apiBase}/api/v1/alerts/events?limit=20`);
+        const resp = await apiFetch("/api/v1/alerts/events?limit=20");
         if (!resp.ok) return;
         const data = await resp.json();
         const events = (data || []).map((e: any) => ({

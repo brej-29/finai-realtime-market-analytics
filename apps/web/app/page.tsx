@@ -20,6 +20,7 @@ import { DonutChart } from "@/components/charts/DonutChart";
 import { Card, CardContent } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { PriceDelta } from "@/components/ui/PriceDelta";
+import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 interface PortfolioSummaryByType {
@@ -81,11 +82,9 @@ export default function HomePage() {
   const [summaryLoading, setSummaryLoading] = useState(true);
 
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
-
     async function loadSummary() {
       try {
-        const resp = await fetch(`${apiBase}/api/v1/portfolio/summary`);
+        const resp = await apiFetch("/api/v1/portfolio/summary");
         if (resp.ok) setSummary(await resp.json());
       } catch {
         // API unreachable; empty state below covers this.

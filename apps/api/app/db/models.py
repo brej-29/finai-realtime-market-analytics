@@ -51,6 +51,7 @@ class Watchlist(Base):
     __tablename__ = "watchlists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(length=36), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(length=100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -97,6 +98,7 @@ class Holding(Base):
     __tablename__ = "holdings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(length=36), nullable=False, index=True)
     symbol: Mapped[str] = mapped_column(String(length=50), nullable=False)
     asset_type: Mapped[AssetType] = mapped_column(
         Enum(AssetType, name="holding_asset_type_enum", native_enum=False),
@@ -113,6 +115,7 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(length=36), nullable=False, index=True)
     symbol: Mapped[str] = mapped_column(String(length=50), nullable=False)
     asset_type: Mapped[AssetType] = mapped_column(
         Enum(AssetType, name="alert_asset_type_enum", native_enum=False),

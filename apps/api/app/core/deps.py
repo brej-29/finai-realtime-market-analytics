@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import Generator
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Response
+from sqlalchemy.orm import Session
 
 from app.core.config import AppSettings, get_settings
 from app.db.session import SessionLocal
 from app.services.market_data.service import MarketDataService
 from app.services.realtime.manager import RealtimeManager
 from app.services.news.gdelt_client import GDELTClient
+
+WORKSPACE_COOKIE_NAME = "finai_ws"
+WORKSPACE_COOKIE_MAX_AGE = 31536000  # 1 year, seconds
 
 
 def get_app_settings() -> AppSettings:
@@ -21,6 +26,38 @@ def get_db_session() -> Generator:
         yield db
     finally:
         db.close()
+
+
+def get_workspace_id(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db_session),
+) -> str:
+    """Resolve the visitor's sandboxed workspace from a cookie, minting one if absent.
+
+    # ponytail: this is a data-partitioning token, not an auth credential -
+    # it is unsigned and trivially forgeable. Do not use it to gate access to
+    # anything sensitive; add real auth if that's ever needed.
+    """
+    workspace_id = request.cookies.get(WORKSPACE_COOKIE_NAME)
+    if workspace_id:
+        return workspace_id
+
+    workspace_id = uuid.uuid4().hex
+    response.set_cookie(
+        WORKSPACE_COOKIE_NAME,
+        workspace_id,
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        max_age=WORKSPACE_COOKIE_MAX_AGE,
+        path="/",
+    )
+
+    from app.db.seed import seed_demo_data
+
+    seed_demo_data(db, workspace_id)
+    return workspace_id
 
 
 def build_market_data_service(settings: AppSettings) -> MarketDataService:

@@ -14,8 +14,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to the repo root: a bare "lib/" also matched apps/web/lib (Next.js
+# source), which silently kept the frontend's shared modules out of git.
+/lib/
+/lib64/
 parts/
 sdist/
 var/

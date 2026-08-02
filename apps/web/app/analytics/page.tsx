@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
+import { apiFetch } from "@/lib/api";
 import { cn, formatPercent } from "@/lib/utils";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
@@ -73,16 +74,6 @@ const metricToneClasses: Record<"neutral" | "positive" | "negative", string> = {
   negative: "text-negative"
 };
 
-function getApiBase(): string {
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.host}`;
-  }
-  return "http://localhost:8000";
-}
-
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -121,10 +112,9 @@ export default function AnalyticsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const apiBase = getApiBase();
         const [pResp, bResp] = await Promise.all([
-          fetch(`${apiBase}/api/v1/analytics/portfolio`),
-          fetch(`${apiBase}/api/v1/analytics/benchmark?symbol=${encodeURIComponent(benchmarkSymbol)}&asset_type=stock`)
+          apiFetch("/api/v1/analytics/portfolio"),
+          apiFetch(`/api/v1/analytics/benchmark?symbol=${encodeURIComponent(benchmarkSymbol)}&asset_type=stock`)
         ]);
         if (pResp.ok) setPortfolio(await pResp.json());
         if (bResp.ok) setBenchmark(await bResp.json());
@@ -204,7 +194,7 @@ export default function AnalyticsPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/reports/portfolio.pdf`, { method: "POST" });
+      const resp = await apiFetch("/api/v1/reports/portfolio.pdf", { method: "POST" });
       if (!resp.ok) throw new Error("export failed");
       const blob = await resp.blob();
       const url = window.URL.createObjectURL(blob);
@@ -257,7 +247,7 @@ export default function AnalyticsPage() {
     if (!trimmed || btRunning) return;
     setBtRunning(true);
     try {
-      const resp = await fetch(`${getApiBase()}/api/v1/backtest`, {
+      const resp = await apiFetch("/api/v1/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

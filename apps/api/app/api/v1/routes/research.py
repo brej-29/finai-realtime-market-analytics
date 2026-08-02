@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Path, Request
+from fastapi import APIRouter, Depends, Path, Request, Response
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import AppSettings
 from app.core.deps import get_app_settings, get_db_session, get_market_data_service, get_news_client
 from app.core.errors import NotFoundError, ResearchDisabledError, ResearchLimitError
 from app.core.logging import get_logger
-from app.db.models import ResearchReport, ResearchStatus
+from app.db.models import AssetType, ResearchReport, ResearchStatus
 from app.db.session import SessionLocal
 from app.schemas.research import (
     ResearchBudget,
@@ -38,6 +38,39 @@ def _runs_today(db: Session) -> int:
         db.query(ResearchReport)
         .filter(ResearchReport.created_at >= start_of_day.replace(tzinfo=None))
         .count()
+    )
+
+
+def _find_reusable_report(
+    db: Session, symbol: str, asset_type: AssetType, settings: AppSettings
+) -> ResearchReport | None:
+    """Most recent report for (symbol, asset_type) that can be handed back
+    instead of starting a new run: a COMPLETED report inside the shared
+    reuse window, or a RUNNING report started in the last 10 minutes (so
+    concurrent requests attach to the in-flight run rather than duplicating
+    it). FAILED reports are never reused.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    completed_cutoff = now - timedelta(days=settings.research_cache_days)
+    running_cutoff = now - timedelta(minutes=10)
+    return (
+        db.query(ResearchReport)
+        .filter(ResearchReport.symbol == symbol)
+        .filter(ResearchReport.asset_type == asset_type)
+        .filter(
+            or_(
+                and_(
+                    ResearchReport.status == ResearchStatus.COMPLETED,
+                    ResearchReport.created_at >= completed_cutoff,
+                ),
+                and_(
+                    ResearchReport.status == ResearchStatus.RUNNING,
+                    ResearchReport.created_at >= running_cutoff,
+                ),
+            )
+        )
+        .order_by(ResearchReport.created_at.desc())
+        .first()
     )
 
 
@@ -210,12 +243,25 @@ async def _execute_research(
 async def start_research(
     payload: ResearchRequest,
     request: Request,
+    response: Response,
     settings: AppSettings = Depends(get_app_settings),
     db: Session = Depends(get_db_session),
     market_data: MarketDataService = Depends(get_market_data_service),
     news_client: GDELTClient = Depends(get_news_client),
 ) -> ResearchReportRead:
-    """Kick off a multi-agent research run; poll the returned id for the result."""
+    """Kick off a multi-agent research run; poll the returned id for the result.
+
+    Research is shared: a COMPLETED report for the same symbol within the
+    last `research_cache_days` days (or a RUNNING report started in the
+    last 10 minutes) is returned as-is with a 200 status instead of paying
+    for a new LLM run.
+    """
+    symbol = payload.symbol.upper()
+    existing = _find_reusable_report(db, symbol, payload.asset_type, settings)
+    if existing is not None:
+        response.status_code = 200
+        return ResearchReportRead.model_validate(existing)
+
     if _runs_today(db) >= settings.research_daily_limit:
         raise ResearchLimitError(
             "The daily research run limit for this demo has been reached. Try again tomorrow."
@@ -233,7 +279,7 @@ async def start_research(
             fallback_model = settings.groq_research_model
 
     report = ResearchReport(
-        symbol=payload.symbol.upper(),
+        symbol=symbol,
         asset_type=payload.asset_type,
         status=ResearchStatus.RUNNING,
         model=model,
@@ -294,10 +340,22 @@ def get_budget(
 
 @router.get("", response_model=list[ResearchReportSummary])
 def list_research(
+    settings: AppSettings = Depends(get_app_settings),
     db: Session = Depends(get_db_session),
 ) -> list[ResearchReportSummary]:
+    """Recent reports only — anything older than `research_cache_days` has
+    aged out of the shared-reuse window and drops off this list, but the
+    row itself is retained; fetch it directly via GET /research/{id}.
+    """
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        days=settings.research_cache_days
+    )
     reports = (
-        db.query(ResearchReport).order_by(ResearchReport.created_at.desc()).limit(20).all()
+        db.query(ResearchReport)
+        .filter(ResearchReport.created_at >= cutoff)
+        .order_by(ResearchReport.created_at.desc())
+        .limit(20)
+        .all()
     )
     return [ResearchReportSummary.model_validate(r) for r in reports]
 
@@ -307,6 +365,8 @@ def get_research(
     report_id: int = Path(..., ge=1),
     db: Session = Depends(get_db_session),
 ) -> ResearchReportRead:
+    # Rows are never deleted, only aged out of reuse/listing — so a report of
+    # any age remains individually retrievable by id.
     report = db.get(ResearchReport, report_id)
     if report is None:
         raise NotFoundError("Research report not found.", details={"report_id": report_id})

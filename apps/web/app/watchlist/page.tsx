@@ -16,10 +16,7 @@ import { Select } from "@/components/ui/Select";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PriceDelta } from "@/components/ui/PriceDelta";
-
-function getApiBase(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? `${window.location.origin}`;
-}
+import { apiFetch } from "@/lib/api";
 
 export default function WatchlistPage() {
   const { watchlistItems, setWatchlistItems } = useAppStore();
@@ -52,7 +49,7 @@ export default function WatchlistPage() {
   useEffect(() => {
     async function loadWatchlist() {
       try {
-        const resp = await fetch(`${getApiBase()}/api/v1/watchlists/default`);
+        const resp = await apiFetch("/api/v1/watchlists/default");
         if (!resp.ok) return;
         const data = await resp.json();
         setWatchlistId(data.id);
@@ -79,15 +76,14 @@ export default function WatchlistPage() {
     if (!trimmed || submitting) return;
     setSubmitting(true);
     try {
-      const apiBase = getApiBase();
       let targetId = watchlistId;
       if (targetId == null) {
-        const defaultResp = await fetch(`${apiBase}/api/v1/watchlists/default`);
+        const defaultResp = await apiFetch("/api/v1/watchlists/default");
         if (!defaultResp.ok) throw new Error("Could not reach the watchlist API.");
         targetId = (await defaultResp.json()).id;
         setWatchlistId(targetId);
       }
-      const resp = await fetch(`${apiBase}/api/v1/watchlists/${targetId}/items`, {
+      const resp = await apiFetch(`/api/v1/watchlists/${targetId}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: trimmed, asset_type: assetTypeInput })
@@ -114,10 +110,9 @@ export default function WatchlistPage() {
   async function handleRemove(itemId: number, symbol: string) {
     if (watchlistId == null) return;
     try {
-      const resp = await fetch(
-        `${getApiBase()}/api/v1/watchlists/${watchlistId}/items/${itemId}`,
-        { method: "DELETE" }
-      );
+      const resp = await apiFetch(`/api/v1/watchlists/${watchlistId}/items/${itemId}`, {
+        method: "DELETE"
+      });
       if (resp.ok) {
         setWatchlistItems(watchlistItems.filter((w) => w.id !== itemId));
         toast(`${symbol} removed`);

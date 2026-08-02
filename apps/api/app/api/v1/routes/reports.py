@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from app.core.deps import get_db_session, get_market_data_service
+from app.core.deps import get_db_session, get_market_data_service, get_workspace_id
 from app.db.models import Holding
 from app.schemas.portfolio import PortfolioSummary
 from app.services.market_data.service import MarketDataService
@@ -21,11 +21,12 @@ router = APIRouter()
 async def _compute_portfolio_summary(
     db: Session,
     market_data: MarketDataService,
+    workspace_id: str,
 ) -> PortfolioSummary:
     from app.api.v1.routes.portfolio import get_portfolio_summary
 
     # Reuse existing summary logic for consistency.
-    summary = await get_portfolio_summary(db=db, market_data=market_data)
+    summary = await get_portfolio_summary(db=db, market_data=market_data, workspace_id=workspace_id)
     return summary
 
 
@@ -33,10 +34,16 @@ async def _compute_portfolio_summary(
 async def generate_portfolio_report(
     db: Session = Depends(get_db_session),
     market_data: MarketDataService = Depends(get_market_data_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> Response:
     """Generate a simple PDF portfolio report (holdings + metrics)."""
-    holdings: list[Holding] = db.query(Holding).order_by(Holding.symbol.asc()).all()
-    summary = await _compute_portfolio_summary(db=db, market_data=market_data)
+    holdings: list[Holding] = (
+        db.query(Holding)
+        .filter(Holding.workspace_id == workspace_id)
+        .order_by(Holding.symbol.asc())
+        .all()
+    )
+    summary = await _compute_portfolio_summary(db=db, market_data=market_data, workspace_id=workspace_id)
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
