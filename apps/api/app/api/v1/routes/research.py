@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, Path, Request, Response
+from fastapi.responses import StreamingResponse
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -30,6 +32,13 @@ from app.services.research.tools import ResearchToolbox
 router = APIRouter()
 
 logger = get_logger("app.api.research")
+
+# ponytail: single-process only — an in-memory dict of queues means live
+# progress events don't cross workers. Fine for this single-worker deployment;
+# would need Redis pub/sub (or similar) if the API ever runs multiple workers.
+_STREAM_QUEUES: dict[int, "asyncio.Queue[dict[str, Any]]"] = {}
+
+_HEARTBEAT_SECONDS = 15.0
 
 
 def _runs_today(db: Session) -> int:
@@ -155,6 +164,13 @@ async def _execute_research(
     and a Groq fallback is configured, the whole run is retried on Groq before
     giving up — so a demo doesn't just go dark when one provider hiccups.
     """
+    # The queue is registered by start_research before this task is scheduled,
+    # so a client that connects immediately after the 202 never races us to it.
+    queue = _STREAM_QUEUES.setdefault(report_id, asyncio.Queue())
+
+    def on_event(event: dict[str, Any]) -> None:
+        queue.put_nowait(event)
+
     db = SessionLocal()
     try:
         report = db.get(ResearchReport, report_id)
@@ -177,6 +193,7 @@ async def _execute_research(
                     symbol=symbol,
                     toolbox=toolbox,
                     max_iterations=settings.research_max_agent_iterations,
+                    on_event=on_event,
                 )
                 total_failure = all(s.error for s in outcome.sections)
             except Exception as exc:  # noqa: BLE001 - a fully down provider raises here
@@ -197,6 +214,7 @@ async def _execute_research(
                     symbol=symbol,
                     toolbox=toolbox,
                     max_iterations=settings.research_max_agent_iterations,
+                    on_event=on_event,
                 )
                 provider = "groq"
                 model = fallback_model
@@ -235,8 +253,12 @@ async def _execute_research(
             report.error = str(exc)[:500]
         report.completed_at = datetime.now(timezone.utc)
         db.commit()
+        queue.put_nowait(
+            {"type": "done", "status": report.status.value, "report_id": report_id}
+        )
     finally:
         db.close()
+        _STREAM_QUEUES.pop(report_id, None)
 
 
 @router.post("", response_model=ResearchReportRead, status_code=202)
@@ -288,6 +310,11 @@ async def start_research(
     db.add(report)
     db.commit()
     db.refresh(report)
+
+    # Register the stream queue before scheduling the task: a client that
+    # connects the instant it gets this 202 would otherwise find no queue and
+    # be told the run was already over.
+    _STREAM_QUEUES[report.id] = asyncio.Queue()
 
     task = asyncio.create_task(
         _execute_research(
@@ -358,6 +385,55 @@ def list_research(
         .all()
     )
     return [ResearchReportSummary.model_validate(r) for r in reports]
+
+
+async def _stream_events(report_id: int, status: str) -> AsyncIterator[str]:
+    queue = _STREAM_QUEUES.get(report_id)
+    if queue is None:
+        if status == ResearchStatus.RUNNING.value:
+            # Still running but the queue is gone (server restarted mid-run):
+            # tell the client to fall back to polling rather than claiming the
+            # run finished, which would leave the UI stuck on "running".
+            message = "Live stream unavailable; falling back to polling."
+            yield f"data: {json.dumps({'type': 'error', 'message': message})}\n\n"
+            return
+        # Terminal already: emit one done event from the known status and stop.
+        yield f"data: {json.dumps({'type': 'done', 'status': status, 'report_id': report_id})}\n\n"
+        return
+
+    while True:
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_SECONDS)
+        except asyncio.TimeoutError:
+            yield ": ping\n\n"
+            continue
+        yield f"data: {json.dumps(event)}\n\n"
+        if event.get("type") == "done":
+            return
+
+
+# Registered before GET /{report_id} so path matching resolves the more
+# specific /{report_id}/stream route first.
+@router.get("/{report_id}/stream")
+def stream_research(
+    report_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    """Live progress for a research run via Server-Sent Events.
+
+    Terminal reports (already completed/failed) or reports with no live
+    queue (e.g. after a server restart mid-run) get a single immediate
+    `done` event instead of hanging.
+    """
+    report = db.get(ResearchReport, report_id)
+    if report is None:
+        raise NotFoundError("Research report not found.", details={"report_id": report_id})
+
+    return StreamingResponse(
+        _stream_events(report_id, report.status.value),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{report_id}", response_model=ResearchReportRead)

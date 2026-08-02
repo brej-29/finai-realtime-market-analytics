@@ -45,3 +45,26 @@ class AIInsightsResponse(BaseModel):
     forecast_summary: ForecastSummary | None
     anomalies: list[AnomalyPoint]
     disclaimer: str
+
+
+class ForecastAccuracyPoint(BaseModel):
+    date: str
+    predicted: float
+    actual: float
+    lower: float
+    upper: float
+
+
+class ForecastAccuracyResponse(BaseModel):
+    symbol: str
+    asset_type: AssetType
+    horizon_days: int
+    evaluations: int
+    mae: float
+    rmse: float
+    mape_pct: float
+    directional_accuracy_pct: float
+    band_coverage_pct: float
+    baseline_mae: float
+    skill_vs_baseline_pct: float
+    points: list[ForecastAccuracyPoint]

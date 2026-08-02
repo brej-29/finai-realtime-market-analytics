@@ -151,6 +151,26 @@ async def test_agent_failure_does_not_sink_the_run() -> None:
     assert "unavailable" in result.text
 
 
+async def test_run_research_emits_lifecycle_events_per_agent() -> None:
+    client = StubAnthropicClient()
+    toolbox = ResearchToolbox(
+        market_data=DummyMarketDataService(),  # type: ignore[arg-type]
+        news_client=DummyNewsClient(),  # type: ignore[arg-type]
+        asset_type=AssetType.STOCK,
+    )
+    events: list[dict[str, Any]] = []
+    await run_research(client, "stub-model", "AAPL", toolbox, on_event=events.append)
+
+    started = {e["agent"] for e in events if e["type"] == "agent_started"}
+    completed = {e["agent"] for e in events if e["type"] == "agent_completed"}
+    expected_agents = {spec.name for spec in AGENT_SPECS}
+    assert started == expected_agents
+    assert completed == expected_agents
+    assert all(e["ok"] is True for e in events if e["type"] == "agent_completed")
+    assert any(e["type"] == "tool_call" for e in events)
+    assert any(e["type"] == "synthesis_started" for e in events)
+
+
 def test_estimate_cost_usd_uses_model_pricing() -> None:
     from app.services.research.pricing import estimate_cost_usd
 
@@ -431,6 +451,30 @@ def test_research_daily_limit(client: TestClient) -> None:
         assert resp.json()["code"] == "research_daily_limit"
     finally:
         settings.research_daily_limit = original
+
+
+def test_stream_endpoint_on_completed_report_closes_immediately(client: TestClient) -> None:
+    resp = client.post("/api/v1/research", json={"symbol": "AAPL", "asset_type": "stock"})
+    assert resp.status_code == 202
+    report = resp.json()
+
+    for _ in range(50):
+        resp = client.get(f"/api/v1/research/{report['id']}")
+        report = resp.json()
+        if report["status"] != "running":
+            break
+        time.sleep(0.1)
+    assert report["status"] == "completed"
+
+    with client.stream("GET", f"/api/v1/research/{report['id']}/stream") as stream_resp:
+        assert stream_resp.status_code == 200
+        assert stream_resp.headers["content-type"].startswith("text/event-stream")
+        body = "".join(stream_resp.iter_text())
+
+    lines = [line for line in body.splitlines() if line.startswith("data: ")]
+    assert len(lines) == 1
+    event = json.loads(lines[0][len("data: ") :])
+    assert event == {"type": "done", "status": "completed", "report_id": report["id"]}
 
 
 def test_research_report_not_found(client: TestClient) -> None:

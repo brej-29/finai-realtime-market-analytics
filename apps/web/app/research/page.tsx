@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AnimatePresence, motion } from "motion/react";
 import {
+  Check,
   ChevronDown,
   ClipboardList,
   Gauge,
@@ -11,6 +12,7 @@ import {
   Newspaper,
   Sparkles,
   TrendingUp,
+  X,
   Zap
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -22,7 +24,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getApiBase } from "@/lib/api";
 import { cn, relativeTime } from "@/lib/utils";
 
 type AssetType = "stock" | "crypto";
@@ -137,6 +139,106 @@ function formatSharedTimestamp(iso: string): string {
   });
 }
 
+type AgentLiveStatus = "idle" | "working" | "done" | "failed";
+
+interface AgentLiveState {
+  status: AgentLiveStatus;
+  toolCalls: { tool: string; input: Record<string, unknown> }[];
+}
+
+function initialLiveAgents(): Record<string, AgentLiveState> {
+  return {
+    technical: { status: "idle", toolCalls: [] },
+    sentiment: { status: "idle", toolCalls: [] },
+    risk: { status: "idle", toolCalls: [] }
+  };
+}
+
+function primaryInputValue(input: Record<string, unknown>): string | null {
+  if (!input) return null;
+  if ("symbol" in input) return String(input.symbol);
+  const values = Object.values(input);
+  return values.length ? String(values[0]) : null;
+}
+
+type StreamEvent =
+  | { type: "agent_started"; agent: string; title: string }
+  | { type: "tool_call"; agent: string; tool: string; input: Record<string, unknown> }
+  | { type: "agent_completed"; agent: string; ok: boolean }
+  | { type: "synthesis_started" }
+  | { type: "done"; status: "completed" | "failed"; report_id: number }
+  | { type: "error"; message: string };
+
+function LiveAgentRow({ name, state, index }: { name: string; state: AgentLiveState; index: number }) {
+  const meta = AGENT_META[name] ?? { icon: Sparkles, label: name };
+  const Icon = meta.icon;
+  const isWorking = state.status === "working";
+  const isDone = state.status === "done";
+  const isFailed = state.status === "failed";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.08 }}
+      className="rounded-xl border bg-surface/60 px-3.5 py-3"
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+            isFailed
+              ? "bg-negative/10 text-negative"
+              : isDone
+                ? "bg-positive/10 text-positive"
+                : "bg-brand/10 text-brand-light"
+          )}
+        >
+          {isWorking && (
+            <motion.span
+              className="absolute inset-0 rounded-full border border-brand/40"
+              animate={{ scale: [1, 1.35], opacity: [0.6, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, delay: index * 0.2 }}
+            />
+          )}
+          {isDone ? <Check className="h-4 w-4" /> : isFailed ? <X className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">{meta.label}</p>
+          <p className="text-[11px] text-muted">
+            {isFailed
+              ? "Could not complete"
+              : isDone
+                ? "Done"
+                : isWorking
+                  ? "Gathering data and analyzing…"
+                  : "Waiting…"}
+          </p>
+        </div>
+        {isWorking && <Badge variant="brand">working</Badge>}
+        {isDone && <Badge variant="positive">done</Badge>}
+        {isFailed && <Badge variant="negative">failed</Badge>}
+      </div>
+      {state.toolCalls.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5 pl-11">
+          {state.toolCalls.map((t, i) => {
+            const primary = primaryInputValue(t.input);
+            return (
+              <span
+                key={i}
+                className="rounded-md bg-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-muted"
+              >
+                {t.tool}
+                {primary ? `(${primary})` : ""}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 function AgentWorkingCard({ name, index }: { name: string; index: number }) {
   const meta = AGENT_META[name] ?? { icon: Sparkles, label: name };
   const Icon = meta.icon;
@@ -219,7 +321,11 @@ export default function ResearchPage() {
   const [history, setHistory] = useState<ResearchSummary[]>([]);
   const [starting, setStarting] = useState(false);
   const [budget, setBudget] = useState<ResearchBudget | null>(null);
+  const [liveAgents, setLiveAgents] = useState<Record<string, AgentLiveState>>(initialLiveAgents());
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [sseActive, setSseActive] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const esRef = useRef<EventSource | null>(null);
 
   const loadBudget = useCallback(async () => {
     try {
@@ -235,6 +341,14 @@ export default function ResearchPage() {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
+  }, []);
+
+  const closeStream = useCallback(() => {
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+    setSseActive(false);
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -255,6 +369,7 @@ export default function ResearchPage() {
         setReport(data);
         if (data.status !== "running") {
           stopPolling();
+          closeStream();
           loadHistory();
           loadBudget();
           if (data.status === "failed") {
@@ -267,7 +382,7 @@ export default function ResearchPage() {
         // transient network error; keep polling
       }
     },
-    [loadHistory, loadBudget, stopPolling]
+    [loadHistory, loadBudget, stopPolling, closeStream]
   );
 
   const startPolling = useCallback(
@@ -278,11 +393,81 @@ export default function ResearchPage() {
     [loadReport, stopPolling]
   );
 
+  const startStream = useCallback(
+    (id: number) => {
+      closeStream();
+      stopPolling();
+      setLiveAgents(initialLiveAgents());
+      setSynthesizing(false);
+
+      const es = new EventSource(`${getApiBase()}/api/v1/research/${id}/stream`, { withCredentials: true });
+      esRef.current = es;
+      setSseActive(true);
+
+      es.onmessage = (evt) => {
+        let msg: StreamEvent;
+        try {
+          msg = JSON.parse(evt.data) as StreamEvent;
+        } catch {
+          return;
+        }
+        switch (msg.type) {
+          case "agent_started":
+            setLiveAgents((prev) => ({
+              ...prev,
+              [msg.agent]: { status: "working", toolCalls: prev[msg.agent]?.toolCalls ?? [] }
+            }));
+            break;
+          case "tool_call":
+            setLiveAgents((prev) => {
+              const existing = prev[msg.agent] ?? { status: "working", toolCalls: [] };
+              return {
+                ...prev,
+                [msg.agent]: {
+                  ...existing,
+                  toolCalls: [...existing.toolCalls, { tool: msg.tool, input: msg.input ?? {} }]
+                }
+              };
+            });
+            break;
+          case "agent_completed":
+            setLiveAgents((prev) => {
+              const existing = prev[msg.agent] ?? { status: "working", toolCalls: [] };
+              return { ...prev, [msg.agent]: { ...existing, status: msg.ok ? "done" : "failed" } };
+            });
+            break;
+          case "synthesis_started":
+            setSynthesizing(true);
+            break;
+          case "done":
+            closeStream();
+            loadReport(id);
+            break;
+          case "error":
+            closeStream();
+            startPolling(id);
+            break;
+          default:
+            break;
+        }
+      };
+
+      es.onerror = () => {
+        closeStream();
+        startPolling(id);
+      };
+    },
+    [closeStream, stopPolling, loadReport, startPolling]
+  );
+
   useEffect(() => {
     loadHistory();
     loadBudget();
-    return stopPolling;
-  }, [loadHistory, loadBudget, stopPolling]);
+    return () => {
+      stopPolling();
+      closeStream();
+    };
+  }, [loadHistory, loadBudget, stopPolling, closeStream]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -304,7 +489,7 @@ export default function ResearchPage() {
       setReport(newReport);
       if (newReport.status === "running") {
         toast(`Researching ${trimmed}…`, { description: "Three agents are gathering data in parallel." });
-        startPolling(newReport.id);
+        startStream(newReport.id);
       } else {
         toast(`Showing existing research for ${trimmed}`, {
           description: `Generated ${newReport.completed_at ? relativeTime(newReport.completed_at) : "recently"}`
@@ -321,6 +506,7 @@ export default function ResearchPage() {
 
   function openReport(id: number) {
     stopPolling();
+    closeStream();
     loadReport(id);
   }
 
@@ -372,9 +558,27 @@ export default function ResearchPage() {
           {isRunning && (
             <Card className="space-y-2.5 p-4">
               <p className="mb-1 text-sm font-medium text-foreground">Researching {report?.symbol}…</p>
-              {["technical", "sentiment", "risk"].map((name, i) => (
-                <AgentWorkingCard key={name} name={name} index={i} />
-              ))}
+              {sseActive ? (
+                <>
+                  {["technical", "sentiment", "risk"].map((name, i) => (
+                    <LiveAgentRow key={name} name={name} state={liveAgents[name]} index={i} />
+                  ))}
+                  {synthesizing && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-2 rounded-xl border border-brand/20 bg-brand/5 px-3.5 py-3 text-sm text-brand-light"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Lead analyst is compiling the brief…
+                    </motion.div>
+                  )}
+                </>
+              ) : (
+                ["technical", "sentiment", "risk"].map((name, i) => (
+                  <AgentWorkingCard key={name} name={name} index={i} />
+                ))
+              )}
             </Card>
           )}
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from app.core.logging import get_logger
 from app.services.research.tools import TOOL_DEFINITIONS, ResearchToolbox
@@ -122,6 +122,17 @@ class ResearchOutcome:
     usage: Usage
 
 
+def _emit(on_event: Callable[[dict[str, Any]], None] | None, event: dict[str, Any]) -> None:
+    """Fire an event to the optional callback. A dead client / buggy callback
+    must never break a research run, so any exception is swallowed."""
+    if on_event is None:
+        return
+    try:
+        on_event(event)
+    except Exception:  # noqa: BLE001 - callback errors must never sink a run
+        logger.warning("Research on_event callback raised", exc_info=True)
+
+
 def _text_from(response: Any) -> str:
     parts = [
         block.text for block in response.content if getattr(block, "type", None) == "text"
@@ -137,8 +148,10 @@ async def run_agent(
     toolbox: ResearchToolbox,
     usage: Usage,
     max_iterations: int = 3,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> AgentResult:
     """Run one analyst's tool-use loop until it stops calling tools."""
+    _emit(on_event, {"type": "agent_started", "agent": spec.name, "title": spec.title})
     tools = [TOOL_DEFINITIONS[name] for name in spec.tools]
     messages: list[dict[str, Any]] = [
         {
@@ -164,6 +177,10 @@ async def run_agent(
 
             if response.stop_reason != "tool_use":
                 result.text = _text_from(response)
+                _emit(
+                    on_event,
+                    {"type": "agent_completed", "agent": spec.name, "ok": result.error is None},
+                )
                 return result
 
             tool_uses = [
@@ -175,6 +192,15 @@ async def run_agent(
             for block in tool_uses:
                 payload, is_error = await toolbox.execute(block.name, dict(block.input))
                 result.tool_calls.append({"tool": block.name, "input": dict(block.input)})
+                _emit(
+                    on_event,
+                    {
+                        "type": "tool_call",
+                        "agent": spec.name,
+                        "tool": block.name,
+                        "input": dict(block.input),
+                    },
+                )
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -201,6 +227,7 @@ async def run_agent(
         )
         usage.add(response)
         result.text = _text_from(response)
+        _emit(on_event, {"type": "agent_completed", "agent": spec.name, "ok": result.error is None})
         return result
     except Exception as exc:  # noqa: BLE001 - one failed analyst must not sink the run
         logger.warning(
@@ -209,6 +236,7 @@ async def run_agent(
         )
         result.error = str(exc)
         result.text = f"({spec.title} unavailable: {exc})"
+        _emit(on_event, {"type": "agent_completed", "agent": spec.name, "ok": False})
         return result
 
 
@@ -260,17 +288,21 @@ async def run_research(
     symbol: str,
     toolbox: ResearchToolbox,
     max_iterations: int = 3,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> ResearchOutcome:
     """Run all analysts in parallel, then synthesize their findings."""
     usage = Usage()
     sections = list(
         await asyncio.gather(
             *(
-                run_agent(client, model, spec, symbol, toolbox, usage, max_iterations)
+                run_agent(
+                    client, model, spec, symbol, toolbox, usage, max_iterations, on_event=on_event
+                )
                 for spec in AGENT_SPECS
             )
         )
     )
+    _emit(on_event, {"type": "synthesis_started"})
     synthesis = await synthesize(
         client, model, symbol, toolbox.asset_type.value, sections, usage
     )

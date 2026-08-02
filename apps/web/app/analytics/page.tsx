@@ -8,13 +8,14 @@ import { toast } from "sonner";
 import { Line } from "react-chartjs-2";
 import { Chart as ChartJS, CategoryScale, Filler, LinearScale, LineElement, PointElement, Tooltip, Legend } from "chart.js";
 
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { StatCard } from "@/components/ui/StatCard";
 import { apiFetch } from "@/lib/api";
-import { cn, formatPercent } from "@/lib/utils";
+import { cn, formatCurrency, formatPercent } from "@/lib/utils";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -62,6 +63,31 @@ interface BacktestResult {
   equity_curve: EquityPoint[];
 }
 
+type ForecastHorizon = 7 | 14 | 30;
+
+interface ForecastPoint {
+  date: string;
+  predicted: number;
+  actual: number;
+  lower: number;
+  upper: number;
+}
+
+interface ForecastAccuracyResult {
+  symbol: string;
+  asset_type: BacktestAssetType;
+  horizon_days: number;
+  evaluations: number;
+  mae: number;
+  rmse: number;
+  mape_pct: number;
+  directional_accuracy_pct: number;
+  band_coverage_pct: number;
+  baseline_mae: number;
+  skill_vs_baseline_pct: number;
+  points: ForecastPoint[];
+}
+
 function toneForReturn(value: number): "positive" | "negative" | "neutral" {
   if (value > 0) return "positive";
   if (value < 0) return "negative";
@@ -96,6 +122,20 @@ const chartOptions = {
   }
 };
 
+const forecastChartOptions = {
+  ...chartOptions,
+  plugins: {
+    ...chartOptions.plugins,
+    legend: {
+      ...chartOptions.plugins.legend,
+      labels: {
+        ...chartOptions.plugins.legend.labels,
+        filter: (item: { text: string }) => item.text === "Predicted" || item.text === "Actual"
+      }
+    }
+  }
+};
+
 export default function AnalyticsPage() {
   const [portfolio, setPortfolio] = useState<PortfolioAnalyticsResponse | null>(null);
   const [benchmark, setBenchmark] = useState<BenchmarkAnalyticsResponse | null>(null);
@@ -108,6 +148,12 @@ export default function AnalyticsPage() {
   const [btRange, setBtRange] = useState<BacktestRangeOption>("1y");
   const [btResult, setBtResult] = useState<BacktestResult | null>(null);
   const [btRunning, setBtRunning] = useState(false);
+
+  const [fcSymbol, setFcSymbol] = useState("");
+  const [fcAssetType, setFcAssetType] = useState<BacktestAssetType>("stock");
+  const [fcHorizon, setFcHorizon] = useState<ForecastHorizon>(7);
+  const [fcResult, setFcResult] = useState<ForecastAccuracyResult | null>(null);
+  const [fcRunning, setFcRunning] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -267,6 +313,71 @@ export default function AnalyticsPage() {
       toast.error("Could not reach the API. Please try again.");
     } finally {
       setBtRunning(false);
+    }
+  }
+
+  const forecastChartData = useMemo(() => {
+    if (!fcResult || !fcResult.points.length) return null;
+    const labels = fcResult.points.map((p) =>
+      new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    );
+    return {
+      labels,
+      datasets: [
+        {
+          label: "Predicted",
+          data: fcResult.points.map((p) => p.predicted),
+          borderColor: "#14B8A6",
+          backgroundColor: "rgba(20,184,166,0.15)",
+          tension: 0.3,
+          fill: false
+        },
+        {
+          label: "Actual",
+          data: fcResult.points.map((p) => p.actual),
+          borderColor: "#94A3B8",
+          backgroundColor: "rgba(148,163,184,0.08)",
+          tension: 0.3,
+          fill: false
+        },
+        {
+          label: "Upper band",
+          data: fcResult.points.map((p) => p.upper),
+          borderColor: "transparent",
+          pointRadius: 0,
+          fill: false
+        },
+        {
+          label: "Lower band",
+          data: fcResult.points.map((p) => p.lower),
+          borderColor: "transparent",
+          backgroundColor: "rgba(20,184,166,0.08)",
+          pointRadius: 0,
+          fill: 2
+        }
+      ]
+    };
+  }, [fcResult]);
+
+  async function handleForecastAccuracy(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = fcSymbol.trim().toUpperCase();
+    if (!trimmed || fcRunning) return;
+    setFcRunning(true);
+    try {
+      const resp = await apiFetch(
+        `/api/v1/ai/forecast-accuracy?symbol=${encodeURIComponent(trimmed)}&asset_type=${fcAssetType}&horizon=${fcHorizon}`
+      );
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        toast.error(data?.message ?? "Could not evaluate the model. Please try again.");
+        return;
+      }
+      setFcResult(data);
+    } catch {
+      toast.error("Could not reach the API. Please try again.");
+    } finally {
+      setFcRunning(false);
     }
   }
 
@@ -516,6 +627,134 @@ export default function AnalyticsPage() {
                   Backtest results are simulated from historical data and do not model transaction costs,
                   slippage, taxes, or execution delays. Past performance is not indicative of future results
                   and does not constitute investment advice.
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Model Scorecard</h2>
+          <p className="text-xs text-muted">
+            Walk-forward evaluation of how accurate the app&apos;s price forecast actually is, against a naive
+            baseline.
+          </p>
+        </div>
+
+        <Card className="p-4">
+          <form onSubmit={handleForecastAccuracy} className="flex flex-wrap gap-2.5">
+            <Input
+              type="text"
+              placeholder={fcAssetType === "crypto" ? "Symbol (e.g. BTC)" : "Symbol (e.g. AAPL)"}
+              value={fcSymbol}
+              onChange={(e) => setFcSymbol(e.target.value)}
+              className="min-w-[160px] flex-1"
+            />
+            <Select
+              value={fcAssetType}
+              onChange={(e) => setFcAssetType(e.target.value as BacktestAssetType)}
+              aria-label="Asset type"
+            >
+              <option value="stock">Stock</option>
+              <option value="crypto">Crypto</option>
+            </Select>
+            <Select
+              value={fcHorizon}
+              onChange={(e) => setFcHorizon(Number(e.target.value) as ForecastHorizon)}
+              aria-label="Forecast horizon"
+            >
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+            </Select>
+            <Button type="submit" disabled={fcRunning || !fcSymbol.trim()}>
+              {fcRunning ? "Evaluating…" : "Evaluate model"}
+            </Button>
+          </form>
+        </Card>
+
+        {!fcResult && !fcRunning && (
+          <p className="text-xs text-muted">
+            Configure a symbol and horizon above, then evaluate the model to see forecast accuracy.
+          </p>
+        )}
+
+        {fcResult && (
+          <>
+            <Card>
+              <CardContent className="flex flex-wrap items-center gap-2 py-3.5">
+                {fcResult.skill_vs_baseline_pct > 0 ? (
+                  <Badge variant="positive">
+                    Beats the naive baseline by {formatPercent(fcResult.skill_vs_baseline_pct)}
+                  </Badge>
+                ) : (
+                  <Badge variant="negative">Does NOT beat a naive &quot;price stays flat&quot; baseline</Badge>
+                )}
+                <span className="text-xs text-muted">
+                  skill vs. baseline: {formatPercent(fcResult.skill_vs_baseline_pct)} (baseline MAE{" "}
+                  {formatCurrency(fcResult.baseline_mae)})
+                </span>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="grid grid-cols-2 gap-3 pt-5 sm:grid-cols-3">
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">
+                    Directional Accuracy
+                  </p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {fcResult.directional_accuracy_pct.toFixed(2)}%
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">MAE</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {formatCurrency(fcResult.mae)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">RMSE</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {formatCurrency(fcResult.rmse)}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">MAPE</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {fcResult.mape_pct.toFixed(2)}%
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Band Coverage</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                    {fcResult.band_coverage_pct.toFixed(2)}%
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-surface/40 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Evaluations</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{fcResult.evaluations}</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-5">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+                  Predicted vs Actual ({fcResult.horizon_days}-day horizon)
+                </p>
+                <div className="h-72">
+                  {forecastChartData && <Line data={forecastChartData} options={forecastChartOptions} />}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="py-3.5">
+                <p className="text-[11px] text-muted">
+                  Walk-forward evaluation on historical data. Educational only — not investment advice.
                 </p>
               </CardContent>
             </Card>

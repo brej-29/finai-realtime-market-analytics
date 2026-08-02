@@ -3,11 +3,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_market_data_service
+from app.core.errors import BadRequestError
 from app.db.models import AssetType
-from app.schemas.ai import AIInsightsResponse, ForecastSummary, TechnicalState
+from app.schemas.ai import (
+    AIInsightsResponse,
+    ForecastAccuracyPoint,
+    ForecastAccuracyResponse,
+    ForecastSummary,
+    TechnicalState,
+)
 from app.services.analytics.indicators import compute_macd, compute_simple_rsi
 from app.services.market_data.service import MarketDataService
 from app.services.ml.anomaly import detect_return_anomalies
+from app.services.ml.forecast_eval import evaluate_forecast
 from app.services.ml.forecasting import train_linear_forecast
 
 router = APIRouter()
@@ -107,4 +115,55 @@ async def get_ai_insights(
         forecast_summary=forecast_summary,
         anomalies=anomalies[-10:],
         disclaimer=disclaimer,
+    )
+
+
+@router.get("/forecast-accuracy", response_model=ForecastAccuracyResponse)
+async def get_forecast_accuracy(
+    symbol: str = Query(..., description="Symbol, e.g. AAPL or BTC."),
+    asset_type: AssetType = Query(AssetType.STOCK, description="Asset type: stock or crypto."),
+    horizon: int = Query(7, ge=1, le=30, description="Forecast horizon in bars."),
+    market_data: MarketDataService = Depends(get_market_data_service),
+) -> ForecastAccuracyResponse:
+    """Walk-forward backtest of the linear forecast model against realized prices.
+
+    This endpoint is explicitly educational model evaluation and must not be
+    treated as investment advice.
+    """
+    bars = await market_data.get_history(
+        asset_type=asset_type,
+        symbol=symbol,
+        interval="1d",
+        range_="1y",
+    )
+
+    try:
+        evaluation = evaluate_forecast(bars, horizon=horizon)
+    except ValueError as exc:
+        raise BadRequestError(
+            f"Not enough history to evaluate the forecast model for {symbol.upper()}: {exc}"
+        ) from exc
+
+    return ForecastAccuracyResponse(
+        symbol=symbol.upper(),
+        asset_type=asset_type,
+        horizon_days=horizon,
+        evaluations=evaluation.evaluations,
+        mae=evaluation.mae,
+        rmse=evaluation.rmse,
+        mape_pct=evaluation.mape_pct,
+        directional_accuracy_pct=evaluation.directional_accuracy_pct,
+        band_coverage_pct=evaluation.band_coverage_pct,
+        baseline_mae=evaluation.baseline_mae,
+        skill_vs_baseline_pct=evaluation.skill_vs_baseline_pct,
+        points=[
+            ForecastAccuracyPoint(
+                date=p.date,
+                predicted=p.predicted,
+                actual=p.actual,
+                lower=p.lower,
+                upper=p.upper,
+            )
+            for p in evaluation.points
+        ],
     )
