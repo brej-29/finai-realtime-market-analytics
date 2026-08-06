@@ -317,3 +317,16 @@ Details of implementation are in the corresponding PR description and context do
 - **Cross-workspace leaks caught in blind review**: `/api/v1/analytics/portfolio` and the MCP `get_portfolio_summary` tool both queried holdings unscoped; the PDF report endpoint did too. All three now scope correctly (MCP, having no cookie, reads the shared `demo` workspace).
 - **Frontend**: a single `lib/api.ts` replaced six copy-pasted `getApiBase` helpers and sends the sandbox cookie on every request.
 - 55 backend tests + ruff + mypy, frontend lint/typecheck/vitest/build all pass.
+
+---
+
+## 2026-08-02 – Tier B: live agent streaming and honest model evaluation
+
+**Scope:**
+
+- **Live research streaming (SSE)** — `run_agent`/`run_research` gained an optional `on_event` callback (default `None`, so every existing caller and test is untouched) emitting `agent_started`, `tool_call`, `agent_completed`, and `synthesis_started`. An in-process queue per run feeds `GET /api/v1/research/{id}/stream` as Server-Sent Events with 15s heartbeats and `X-Accel-Buffering: no`. The research page replaces blind 3-second polling with a live activity feed: each analyst transitions idle → working → done, with its tool calls appearing as chips in real time. Polling is retained as a fallback because free-tier proxies do break SSE. Single-process only by design (marked in code); multi-worker deployment would need Redis pub/sub.
+  - **Race fixed during live testing**: the queue was created inside the background task, so a client connecting immediately after the `202` found no queue and received a `done` event claiming the run had finished — leaving the UI stuck on "running" forever. The queue is now registered before the task is scheduled, and a missing queue on a still-running report emits an `error` event (triggering the polling fallback) rather than a false `done`.
+- **Walk-forward forecast evaluation** — new `app/services/ml/forecast_eval.py` and `GET /api/v1/ai/forecast-accuracy`, plus a Model Scorecard section on Analytics. Computed on demand from history: no table, no migration, no scheduler job, and no cold-start empty state. Each fit trains only on bars up to its decision point; a test proves the absence of lookahead by mutating bars beyond the last evaluated target and asserting the metrics are unchanged. Reports MAE, RMSE, MAPE, directional accuracy, band coverage, and — the point of the exercise — skill against a naive "price stays flat" baseline.
+  - **The honest result on real AAPL data: 36.2% directional accuracy, −7.9% skill versus the naive baseline, 24.1% band coverage.** The linear-regression forecast does not beat assuming the price stays put, and its ±RMSE band captures a quarter of outcomes rather than the ~68% a 1σ interval implies. The UI states this plainly instead of hiding it. Publishing a model's failure is more useful than implying success it does not have.
+- Deferred: email/webhook notifications (needs an external account) and the portfolio-optimization pack.
+- 62 backend tests + ruff + mypy, frontend lint/typecheck/vitest/build all pass. Verified live: a full AMD research run streamed all three analysts' tool calls and completed for $0.0228.
